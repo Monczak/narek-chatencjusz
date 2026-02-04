@@ -1,6 +1,5 @@
-@BrainService_HostAddress = http://localhost:5020
+@BrainService_HostAddress = http://localhost:8080
 
-GET {{BrainService_HostAddress}}/weatherforecast/
-Accept: application/json
+GET {{BrainService_HostAddress}}/
 
 ###

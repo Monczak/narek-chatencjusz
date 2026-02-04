@@ -15,10 +15,12 @@ RUN dotnet publish -c Release -o /app/publish -p:ProtoBaseDir=/proto
 
 # Run stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+ENV ASPNETCORE_HTTP_PORTS=""
+
 WORKDIR /app
+
 COPY --from=build /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 EXPOSE 5050
 
