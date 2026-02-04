@@ -4,10 +4,17 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    
+    <ProtoBaseDir Condition="'$(ProtoBaseDir)' == ''">../../shared/proto</ProtoBaseDir>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Protobuf Include="$(ProtoBaseDir)/brain.proto" GrpcServices="Server" Link="Proto/brain.proto"/>
   </ItemGroup>
 
 </Project>

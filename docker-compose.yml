@@ -1,17 +1,21 @@
 services:
   bot:
     build:
-      context: ./services/bot
+      context: .
+      dockerfile: services/bot/Dockerfile
+    container_name: narek-chatencjusz-bot
     env_file:
       - ./services/bot/.env
-    container_name: narek-chatencjusz-bot
+    environment:
+      - BRAIN_URL=brain:5050
     restart: unless-stopped
     networks:
       - internal
 
   brain:
     build:
-      context: ./services/brain
+      context: .
+      dockerfile: services/brain/Dockerfile
     container_name: narek-chatencjusz-brain
     restart: unless-stopped
     networks:

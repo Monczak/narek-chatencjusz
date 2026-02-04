@@ -2,12 +2,15 @@ import discord
 import os
 import logging
 
+from config import config
+from test_grpc import ping_brain
+
 from dotenv import load_dotenv
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+TOKEN = config.discord_bot_token
 
 with open(".version", "r") as version_file:
     VERSION = version_file.read().strip()
@@ -21,7 +24,8 @@ async def on_ready():
 
 @bot.slash_command(name="ping", description="Ping")
 async def ping(ctx: discord.ApplicationContext):
-    await ctx.respond("Pong!")
+    response = ping_brain()
+    await ctx.respond(f"Pong! Response: {response.message}")
 
 def main():
     logging.info(f"Starting Narek Chatencjusz bot service - version {VERSION}")

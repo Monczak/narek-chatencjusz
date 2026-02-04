@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option csharp_namespace = "BrainService.Proto";
+
+package brain;
+
+service Brain {
+  // Simple heartbeat
+  rpc Ping (PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingResponse {
+  string message = 1;
+}
