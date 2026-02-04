@@ -1,0 +1,22 @@
+services:
+  bot:
+    build:
+      context: ./services/bot
+    env_file:
+      - ./services/bot/.env
+    container_name: narek-chatencjusz-bot
+    restart: unless-stopped
+    networks:
+      - internal
+
+  brain:
+    build:
+      context: ./services/brain
+    container_name: narek-chatencjusz-brain
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
