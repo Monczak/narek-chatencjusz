@@ -1,16 +1,11 @@
 import discord
-import os
 import logging
 
-from config import config
-from test_grpc import ping_brain
+from containers import Container
 
-from dotenv import load_dotenv
-load_dotenv()
+from cogs.util import UtilCog
 
 logging.basicConfig(level=logging.INFO)
-
-TOKEN = config.discord_bot_token
 
 with open(".version", "r") as version_file:
     VERSION = version_file.read().strip()
@@ -22,14 +17,26 @@ async def on_ready():
     logging.info(f"Logged in as {bot.user}")
     logging.info(f"Narek Chatencjusz bot service is up and running")
 
-@bot.slash_command(name="ping", description="Ping")
-async def ping(ctx: discord.ApplicationContext):
-    response = ping_brain()
-    await ctx.respond(f"Pong! Response: {response.message}")
-
 def main():
     logging.info(f"Starting Narek Chatencjusz bot service - version {VERSION}")
-    bot.run(TOKEN)
+
+    container = Container()
+    logging.info("Initializing resources...")
+    container.init_resources()
+
+    brain_service = container.brain_client()
+
+    util_cog = UtilCog(bot, brain_service)
+    bot.add_cog(util_cog)
+
+    try:
+        token = container.config.discord_bot_token()
+        bot.run(token)
+    finally:
+        logging.info("Shutting down resources...")
+        container.shutdown_resources()
+    
+    logging.info("Bye!")
 
 if __name__ == "__main__":
     main()

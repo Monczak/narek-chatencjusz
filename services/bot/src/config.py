@@ -1,11 +1,10 @@
-import os
+from pydantic_settings import BaseSettings
 
-from dotenv import load_dotenv
-load_dotenv()
+class Settings(BaseSettings):
+    discord_bot_token: str
+    brain_url: str = "localhost:5050"
+    valkey_url: str = "valkey://localhost:6379"
 
-class Config:
-    def __init__(self):
-        self.brain_url = os.getenv("BRAIN_URL", "localhost:5050")
-        self.discord_bot_token = os.getenv("DISCORD_BOT_TOKEN")
-
-config = Config()
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
