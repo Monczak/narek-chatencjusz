@@ -1,9 +1,12 @@
 from dependency_injector import containers, providers
 
 from config import Settings
+
 from infra.brain import BrainClient
 from infra.resources import init_grpc_channel
 from infra.valkey import ValkeyClient
+
+from services.util import UtilService
 
 class Container(containers.DeclarativeContainer):
     config = providers.Configuration(pydantic_settings=[Settings()]) # type: ignore
@@ -21,4 +24,9 @@ class Container(containers.DeclarativeContainer):
     valkey_client = providers.Resource(
         ValkeyClient, 
         url=config.valkey_url
+    )
+
+    util_service = providers.Factory(
+        UtilService,
+        brain=brain_client
     )

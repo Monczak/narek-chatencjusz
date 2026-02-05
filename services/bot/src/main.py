@@ -24,9 +24,7 @@ def main():
     logging.info("Initializing resources...")
     container.init_resources()
 
-    brain_service = container.brain_client()
-
-    util_cog = UtilCog(bot, brain_service)
+    util_cog = UtilCog(bot, container.util_service())
     bot.add_cog(util_cog)
 
     try:

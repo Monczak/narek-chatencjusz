@@ -4,7 +4,7 @@ from typing import Iterator
 import grpc
 
 def init_grpc_channel(url: str) -> Iterator[grpc.Channel]:
-    logging.info(f"Connecting to Brain at {url}...")
+    logging.info(f"Connecting to gRPC endpoint at {url}...")
 
     options = [
         ("grpc.keepalive_time_ms", 10000),
@@ -16,6 +16,6 @@ def init_grpc_channel(url: str) -> Iterator[grpc.Channel]:
 
     yield channel
 
-    logging.info("CLosing Brain connection...")
+    logging.info(f"Closing gRPC endpoint connection ({url})...")
     channel.close()
     
