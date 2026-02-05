@@ -2,6 +2,7 @@ import logging
 from typing import Iterator
 
 import grpc
+from valkey import Valkey
 
 def init_grpc_channel(url: str) -> Iterator[grpc.Channel]:
     logging.info(f"Connecting to gRPC endpoint at {url}...")
@@ -19,3 +20,9 @@ def init_grpc_channel(url: str) -> Iterator[grpc.Channel]:
     logging.info(f"Closing gRPC endpoint connection ({url})...")
     channel.close()
     
+def init_valkey_client(url: str) -> Iterator[Valkey]:
+    client = Valkey.from_url(url, decode_responses=True)
+    
+    yield client
+
+    client.close()

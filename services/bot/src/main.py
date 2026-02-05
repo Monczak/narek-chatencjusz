@@ -1,9 +1,12 @@
+import uuid
 import discord
+import os
 import logging
 
 from containers import Container
 
 from cogs.util import UtilCog
+from cogs.state_manager import StateManager
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,6 +21,8 @@ async def on_ready():
     logging.info(f"Narek Chatencjusz bot service is up and running")
 
 def main():
+    NODE_ID = os.getenv("NODE_ID", f"bot-{uuid.uuid4().hex[:8]}")
+
     logging.info(f"Starting Narek Chatencjusz bot service - version {VERSION}")
 
     container = Container()
@@ -26,6 +31,10 @@ def main():
 
     util_cog = UtilCog(bot, container.util_service())
     bot.add_cog(util_cog)
+
+    valkey_client = container.valkey_client()
+    state_cog = StateManager(bot, valkey_client, NODE_ID)
+    bot.add_cog(state_cog)
 
     try:
         token = container.config.discord_bot_token()

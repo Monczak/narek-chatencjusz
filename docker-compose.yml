@@ -18,6 +18,8 @@ services:
       context: .
       dockerfile: services/brain/Dockerfile
     container_name: narek-chatencjusz-brain
+    environment:
+      - Valkey__Url=valkey://valkey:6379
     restart: unless-stopped
     networks:
       - internal

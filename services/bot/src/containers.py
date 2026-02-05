@@ -3,8 +3,7 @@ from dependency_injector import containers, providers
 from config import Settings
 
 from infra.brain import BrainClient
-from infra.resources import init_grpc_channel
-from infra.valkey import ValkeyClient
+from infra.resources import init_grpc_channel, init_valkey_client
 
 from services.util import UtilService
 
@@ -22,7 +21,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     valkey_client = providers.Resource(
-        ValkeyClient, 
+        init_valkey_client, 
         url=config.valkey_url
     )
 
