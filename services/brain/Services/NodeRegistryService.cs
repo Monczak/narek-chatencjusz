@@ -12,9 +12,15 @@ public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegis
         return nodeId.IsNullOrEmpty ? null : nodeId.ToString();
     }
 
+    public async Task<string?> GetChannelForGuildAsync(string guildId)
+    {
+        var channelId = await _db.StringGetAsync($"guild:{guildId}:channel");
+        return channelId.IsNullOrEmpty ? null : channelId.ToString();
+    }
+
     public async Task<string?> GetNodeAddressAsync(string nodeId)
     {
-        var heartbeatJson = await _db.StringGetAsync($"nodes:{nodeId}:heartbeat");
+        var heartbeatJson = await _db.StringGetAsync($"node:{nodeId}:heartbeat");
         if (heartbeatJson.IsNullOrEmpty)
         {
             logger.LogWarning("Node {NodeId} found in registry but has no heartbeat (Zombie?)", nodeId);
@@ -30,8 +36,15 @@ public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegis
         return null;
     }
 
-    public async Task RegisterGuildConnectionAsync(string guildId)
+    public async Task RegisterGuildConnectionAsync(string guildId, string nodeId, string channelId)
     {
-        await _db.StringSetAsync($"guild:{guildId}:connection", guildId);
+        await _db.StringSetAsync($"guild:{guildId}:connection", nodeId);
+        await _db.StringSetAsync($"guild:{guildId}:channel", channelId);
+    }
+
+    public async Task UnregisterGuildConnectionAsync(string guildId)
+    {
+        await _db.KeyDeleteAsync($"guild:{guildId}:connection");
+        await _db.KeyDeleteAsync($"guild:{guildId}:channel");
     }
 }

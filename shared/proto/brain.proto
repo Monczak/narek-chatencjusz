@@ -7,6 +7,10 @@ package brain;
 service Brain {
   // Simple heartbeat
   rpc Ping (PingRequest) returns (PingResponse);
+
+  // Voice control
+  rpc JoinChannel (JoinChannelRequest) returns (JoinChannelResponse);
+  rpc LeaveChannel (LeaveChannelRequest) returns (LeaveChannelResponse);
 }
 
 message PingRequest {
@@ -15,4 +19,30 @@ message PingRequest {
 
 message PingResponse {
   string message = 1;
+}
+
+message JoinChannelRequest {
+  string guild_id = 1;
+  string channel_id = 2;
+  string node_id = 3;
+}
+
+message JoinChannelResponse {
+  bool success = 1;
+  string message = 2;
+  enum Instruction {
+    STAY = 0;
+    CONNECT = 1;
+    DISCONNECT = 2;
+  }
+  Instruction instruction = 3;
+}
+
+message LeaveChannelRequest {
+  string guild_id = 1;
+  string node_id = 2;
+}
+
+message LeaveChannelResponse {
+  bool success = 1;
 }
