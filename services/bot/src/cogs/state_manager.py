@@ -4,12 +4,14 @@ import discord
 from discord.ext import commands, tasks
 
 from generated import brain_pb2
+from services.event_stream import EventStreamService
 from services.state import StateService
 
 class StateManager(commands.Cog):
-    def __init__(self, bot: discord.Bot, state_service: StateService):
+    def __init__(self, bot: discord.Bot, state_service: StateService, event_stream: EventStreamService):
         self.bot = bot
         self.state = state_service
+        self.event_stream = event_stream
         self.ip_address = socket.gethostbyname(socket.gethostname())
 
         self.heartbeat.start()
@@ -37,7 +39,7 @@ class StateManager(commands.Cog):
             if registered_node is None:
                 logging.warning(f"Healing: I am in guild {guild_id} but Valkey didn't know -- reconciling state")
                 current_channel_id = str(vc.channel.id) # type: ignore
-                self.state.notify_state_change(
+                await self.state.notify_state_change(
                     gid,
                     current_channel_id,
                     brain_pb2.VoiceStateReason.RECONCILE_MISSING
@@ -53,17 +55,13 @@ class StateManager(commands.Cog):
 
             if registered_channel != current_channel_id: # type: ignore
                 logging.warning(f"Reconciling: Channel mismatch in guild {guild_id}. Valkey: {registered_channel} -> Real: {vc.channel.id}") # type: ignore
-                self.state.notify_state_change(
+                await self.state.notify_state_change(
                     gid, 
                     current_channel_id, 
                     brain_pb2.VoiceStateReason.RECONCILE_DRIFT
                 )
 
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):        
-        if member.id != self.bot.user.id: # type: ignore
-            return
-        
+    async def _handle_bot_voice_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if before.channel == after.channel:
             return
         
@@ -79,7 +77,7 @@ class StateManager(commands.Cog):
             
             # Otherwise it's a real disconnect
             logging.warning(f"Detected manual disconnect in guild {gid} -- reconciling state")
-            self.state.notify_state_change(
+            await self.state.notify_state_change(
                 gid, 
                 None, 
                 brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
@@ -97,8 +95,44 @@ class StateManager(commands.Cog):
             
             # We are somewhere else - might have been moved manually
             logging.info(f"Detected move to new channel {after.channel.id} -- reconciling state")
-            self.state.notify_state_change(
+            await self.state.notify_state_change(
                 gid, 
                 current_channel_id, 
                 brain_pb2.VoiceStateReason.MANUAL_MOVE
             )
+
+    async def _handle_user_voice_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        if not member.guild.voice_client or not member.guild.voice_client.channel:
+            return
+        
+        bot_channel_id = member.guild.voice_client.channel.id # type: ignore
+        gid = str(member.guild.id)
+
+        # User joined bot's channel
+        if after.channel and after.channel.id == bot_channel_id and (not before.channel or before.channel.id != bot_channel_id):
+            self.event_stream.push_user_state_update(
+                guild_id=gid,
+                user=member,
+                channel_id=str(bot_channel_id),
+                change_type=brain_pb2.UserVoiceStateUpdate.JOINED
+            )
+        
+        # User left bot's channel
+        elif before.channel and before.channel.id == bot_channel_id and (not after.channel or after.channel.id != bot_channel_id):
+            self.event_stream.push_user_state_update(
+                guild_id=gid,
+                user=member,
+                channel_id=str(bot_channel_id),
+                change_type=brain_pb2.UserVoiceStateUpdate.LEFT
+            )
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):        
+        # Does this apply to us, the bot?
+        if member.id == self.bot.user.id: # type: ignore
+            await self._handle_bot_voice_update(member, before, after)
+        else:
+            await self._handle_user_voice_update(member, before, after)
+        
+        
+        

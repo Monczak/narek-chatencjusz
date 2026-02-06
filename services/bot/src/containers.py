@@ -1,13 +1,14 @@
 from dependency_injector import containers, providers
 
 from config import Settings
-from infra.resources import init_grpc_channel, init_valkey_client
+from infra.resources import init_async_grpc_channel, init_valkey_client
 
 from generated import brain_pb2_grpc
 from bot import NarekChatencjuszBot
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
+from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
 from services.messaging import CommandListener
@@ -22,7 +23,7 @@ class Container(containers.DeclarativeContainer):
     version = providers.Object("0.0.0")
 
     brain_grpc_channel = providers.Resource(
-        init_grpc_channel,
+        init_async_grpc_channel,
         url=config.brain_url
     )
 
@@ -41,6 +42,12 @@ class Container(containers.DeclarativeContainer):
         init_valkey_client,
         url=config.valkey_url,
         decode_responses=False
+    )
+
+    event_stream_service = providers.Singleton(
+        EventStreamService,
+        brain_stub_factory=brain_stub.provider,
+        node_id=node_id
     )
 
     state_service = providers.Factory(
@@ -78,7 +85,8 @@ class Container(containers.DeclarativeContainer):
 
     state_cog = providers.Factory(
         StateManager,
-        state_service=state_service
+        state_service=state_service,
+        event_stream=event_stream_service
     )
 
     voice_cog = providers.Factory(
@@ -106,5 +114,6 @@ class Container(containers.DeclarativeContainer):
         state_cog_factory = state_cog.provider,
         voice_cog_factory = voice_cog.provider,
         voice_service = voice_service,
-        command_listener = command_listener
+        command_listener = command_listener,
+        event_stream=event_stream_service
     )

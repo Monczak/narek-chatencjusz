@@ -21,7 +21,7 @@ class VoiceService:
     def set_bot(self, bot: discord.Bot):
         self.bot = bot
 
-    def request_join(self, guild_id: str, channel_id: str, node_id: str, correlation_id: str) -> Tuple[bool, str]:
+    async def request_join(self, guild_id: str, channel_id: str, node_id: str, correlation_id: str) -> Tuple[bool, str]:
         try:
             req = brain_pb2.JoinChannelRequest(
                 guild_id=guild_id,
@@ -29,20 +29,20 @@ class VoiceService:
                 node_id=node_id,
                 correlation_id=correlation_id
             )
-            res = self.brain.JoinChannel(req)
+            res = await self.brain.JoinChannel(req) # type: ignore (BrainAsyncStub)
             return res.success, res.message
         except Exception as e:
             logging.error(f"Brain voice join error: {e}")
             raise
     
-    def request_leave(self, guild_id: str, node_id: str, correlation_id: str) -> bool:
+    async def request_leave(self, guild_id: str, node_id: str, correlation_id: str) -> bool:
         try:
             req = brain_pb2.LeaveChannelRequest(
                 guild_id=guild_id, 
                 node_id=node_id,
                 correlation_id=correlation_id
             )
-            res = self.brain.LeaveChannel(req)
+            res = await self.brain.LeaveChannel(req) # type: ignore (BrainAsyncStub)
             return res.success
         except Exception as e:
             logging.error(f"Brain voice leave error: {e}")

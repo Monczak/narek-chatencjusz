@@ -1,9 +1,10 @@
-from typing import Callable, List
+from typing import Awaitable, Callable, List
 import discord
 import logging
 
 from valkey import Valkey
 
+from services.event_stream import EventStreamService
 from services.messaging import CommandListener
 from services.voice import VoiceService
 
@@ -13,12 +14,13 @@ class NarekChatencjuszBot(discord.Bot):
         node_id: str, 
         version: str,
         valkey_client: Valkey,
-        util_cog_factory: Callable[..., discord.Cog],
-        state_cog_factory: Callable[..., discord.Cog],
-        voice_cog_factory: Callable[..., discord.Cog],
+        util_cog_factory: Callable[..., Awaitable[discord.Cog]],
+        state_cog_factory: Callable[..., Awaitable[discord.Cog]],
+        voice_cog_factory: Callable[..., Awaitable[discord.Cog]],
         debug_guild_ids: List[int],
         voice_service: VoiceService,
-        command_listener: CommandListener
+        command_listener: CommandListener,
+        event_stream: EventStreamService
     ):
         super().__init__(
             debug_guilds=debug_guild_ids
@@ -34,13 +36,14 @@ class NarekChatencjuszBot(discord.Bot):
 
         self.voice_service = voice_service
         self.command_listener = command_listener
+        self.event_stream = event_stream
 
-    def setup_cogs(self):
+    async def setup_cogs(self):
         logging.info("Loading cogs...")
 
-        self.add_cog(self.util_cog_factory(bot=self))
-        self.add_cog(self.state_cog_factory(bot=self))
-        self.add_cog(self.voice_cog_factory(bot=self))
+        self.add_cog(await self.util_cog_factory(bot=self))
+        self.add_cog(await self.state_cog_factory(bot=self))
+        self.add_cog(await self.voice_cog_factory(bot=self))
 
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")
@@ -51,10 +54,16 @@ class NarekChatencjuszBot(discord.Bot):
         self.loop.create_task(self.command_listener.start())
         logging.info("CommandListener started")
 
+        await self.event_stream.start()
+        logging.info("EventStreamService started")
+
         logging.info(f"Narek Chatencjusz bot service is up and running")
 
     async def close(self):
         logging.info(f"Gracefully shutting down -- cleaning up voice connections...")
+
+        if self.event_stream:
+            await self.event_stream.stop()
 
         try:
             if self.voice_clients:

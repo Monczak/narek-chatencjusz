@@ -22,7 +22,7 @@ class VoiceCog(commands.Cog):
         self.interaction = interaction_service
         self.node_id = node_id
 
-    @discord.slash_command(name="join", description="Join the voice channel you are currently in")
+    @commands.slash_command(name="join", description="Join the voice channel you are currently in")
     async def join(self, ctx: discord.ApplicationContext):
         if not ctx.author.voice or not ctx.author.voice.channel: # type: ignore
             await self.response.respond_error(ctx, "You are not in a voice channel!", ephemeral=True)
@@ -34,7 +34,7 @@ class VoiceCog(commands.Cog):
         
         with self.interaction.long_interaction(ctx) as (correlation_id, handle):
             try:
-                success, message = self.voice.request_join(
+                success, message = await self.voice.request_join(
                     guild_id=str(ctx.guild_id),
                     channel_id=str(channel_to_join.id),
                     node_id=self.node_id,
@@ -50,7 +50,7 @@ class VoiceCog(commands.Cog):
                 logging.error(f"Failed to join VC: {e}")
                 await self.response.respond_error(ctx, "Something went wrong contacting the Brain.")
 
-    @discord.slash_command(name="leave", description="Disconnect from the voice channel")
+    @commands.slash_command(name="leave", description="Disconnect from the voice channel")
     async def leave(self, ctx: discord.ApplicationContext):
         if not ctx.voice_client:
             await self.response.respond_error(ctx, "I'm not connected to any voice channel.", ephemeral=True)
@@ -60,7 +60,7 @@ class VoiceCog(commands.Cog):
         
         with self.interaction.long_interaction(ctx) as (correlation_id, handle):
             try:
-                success = self.voice.request_leave(
+                success = await self.voice.request_leave(
                     guild_id=str(ctx.guild_id), 
                     node_id=self.node_id,
                     correlation_id=correlation_id

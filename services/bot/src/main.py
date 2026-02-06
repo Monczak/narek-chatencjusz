@@ -1,12 +1,14 @@
+import asyncio
 import uuid
 import os
 import logging
 
 from containers import Container
+from bot import NarekChatencjuszBot
 
 logging.basicConfig(level=logging.INFO)
 
-def main():
+async def run_bot():
     with open(".version", "r") as version_file:
         version = version_file.read().strip()
     
@@ -21,18 +23,33 @@ def main():
     container.version.override(version)
 
     logging.info("Initializing resources...")
-    container.init_resources()
+    if asyncio.iscoroutinefunction(container.init_resources):
+        await container.init_resources()
+    else:
+        container.init_resources()
 
     try:
-        bot = container.bot()
-        bot.setup_cogs()
-
+        bot: NarekChatencjuszBot = await container.bot() # type: ignore (container is now in async mode)
         token = container.config.discord_bot_token()
-        bot.run(token)
+
+        await bot.setup_cogs()
+        
+        async with bot:
+            await bot.start(token)
+    except KeyboardInterrupt:
+        pass
     finally:
         logging.info("Shutting down resources...")
-        container.shutdown_resources()
+        shutdown = container.shutdown_resources()
+        if asyncio.iscoroutine(shutdown):
+            await shutdown
         logging.info("Bye!")
+
+def main():
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()

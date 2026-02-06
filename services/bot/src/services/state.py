@@ -32,9 +32,8 @@ class StateService:
     
     def get_registered_channel(self, guild_id: str):
         return self.valkey.get(self._get_guild_channel_key(guild_id))
-
     
-    def notify_state_change(self, guild_id: str, channel_id: str | None, reason):
+    async def notify_state_change(self, guild_id: str, channel_id: str | None, reason):
         try:
             req = brain_pb2.VoiceStateNotification(
                 guild_id=guild_id,
@@ -44,6 +43,6 @@ class StateService:
             if channel_id:
                 req.channel_id = channel_id
             
-            self.brain.NotifyVoiceState(req)
+            await self.brain.NotifyVoiceState(req) # type: ignore (BrainAsyncStub)
         except Exception as e:
             logging.error(f"Failed to notify Brain of state change: {e}")

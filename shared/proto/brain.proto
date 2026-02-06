@@ -12,7 +12,9 @@ service Brain {
   rpc JoinChannel (JoinChannelRequest) returns (JoinChannelResponse);
   rpc LeaveChannel (LeaveChannelRequest) returns (LeaveChannelResponse);
 
-  rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAcknowledgement);
+  rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAck);
+
+  rpc StreamVoiceEvents (stream VoiceEvent) returns (VoiceEventAck);
 }
 
 enum VoiceStateReason {
@@ -60,7 +62,42 @@ message VoiceStateNotification {
   VoiceStateReason reason = 4;
 }
 
-message VoiceStateAcknowledgement {
+message VoiceStateAck {
+  bool success = 1;
+}
+
+// --- Event Streaming ---
+
+message VoiceEvent {
+  string guild_id = 1;
+  string node_id = 2;
+  int64 timestamp = 3;
+
+  oneof event_data {
+    UserVoiceStateUpdate user_state = 4;
+    UserSpeakingUpdate user_speaking = 5;
+  }
+}
+
+message UserVoiceStateUpdate {
+  string user_id = 1;
+  string user_display_name = 2;
+  string channel_id = 3;
+
+  enum ChangeType {
+    UNKNOWN = 0;
+    JOINED = 1;
+    LEFT = 2;
+  }
+  ChangeType change_type = 4;
+}
+
+message UserSpeakingUpdate {
+  string user_id = 1;
+  bool is_speaking = 2;
+}
+
+message VoiceEventAck {
   bool success = 1;
 }
 

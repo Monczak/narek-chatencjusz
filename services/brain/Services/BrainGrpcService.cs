@@ -6,7 +6,8 @@ namespace BrainService.Services;
 public class BrainGrpcService(
     ILogger<BrainGrpcService> logger,
     NodeRegistryService nodeRegistry,
-    CommandPublisher publisher
+    CommandPublisher publisher,
+    IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
     public override Task<PingResponse> Ping(PingRequest request, ServerCallContext context)
@@ -89,7 +90,7 @@ public class BrainGrpcService(
         return new LeaveChannelResponse { Success = true };
     }
 
-    public override async Task<VoiceStateAcknowledgement> NotifyVoiceState(VoiceStateNotification request, ServerCallContext context)
+    public override async Task<VoiceStateAck> NotifyVoiceState(VoiceStateNotification request, ServerCallContext context)
     {
         if (request.HasChannelId)
         {
@@ -103,7 +104,8 @@ public class BrainGrpcService(
             // Bot is disconnected
             var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
             var isOwner = currentOwner == request.NodeId;
-            if (currentOwner == request.NodeId)
+            
+            if (isOwner)
             {
                 logger.LogInformation("State sync ({Reason}): Node {NodeId} disconnected from Guild {GuildId}", 
                     request.Reason, request.NodeId, request.GuildId);
@@ -111,6 +113,55 @@ public class BrainGrpcService(
             }
         }
 
-        return new VoiceStateAcknowledgement { Success = true };
+        return new VoiceStateAck { Success = true };
+    }
+
+    public override async Task<VoiceEventAck> StreamVoiceEvents(IAsyncStreamReader<VoiceEvent> requestStream, ServerCallContext context)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken, 
+            applicationLifetime.ApplicationStopping
+        );
+        
+        try
+        {
+            await foreach (var voiceEvent in requestStream.ReadAllAsync(cts.Token))
+            {
+                switch (voiceEvent.EventDataCase)
+                {
+                    case VoiceEvent.EventDataOneofCase.UserState:
+                        var state = voiceEvent.UserState;
+                        logger.LogInformation(
+                            "[Stream] Guild {GuildId}: User {User} ({UserId}) {Action} - Channel {ChannelId}",
+                            voiceEvent.GuildId, state.UserDisplayName, state.UserId, state.ChangeType, state.ChannelId);
+                        // TODO: Forward this to the event bus
+                        break;
+                    case VoiceEvent.EventDataOneofCase.UserSpeaking:
+                        // TODO: Implement once VAD is done
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (applicationLifetime.ApplicationStopping.IsCancellationRequested)
+            {
+                logger.LogInformation("Voice event stream cancelled (server shutdown)");
+            }
+            else
+            {
+                logger.LogInformation("Voice event stream cancelled (client canceled)");
+            }
+        }
+        catch (IOException)
+        {
+            logger.LogInformation("Voice event stream cancelled (client disconnected)");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error reading voice event stream");
+        }
+        
+        return new VoiceEventAck { Success = true };
     }
 }

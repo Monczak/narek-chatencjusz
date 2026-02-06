@@ -10,7 +10,7 @@ class UtilCog(commands.Cog):
 
     @commands.slash_command(name="ping", description="Ping")
     async def ping(self, ctx: discord.ApplicationContext):
-        response = self.util_service.ping("Hello")
+        response = await self.util_service.ping("Hello")
         await ctx.respond(response)
 
     @commands.slash_command(name="sync", description="Force sync slash commands")

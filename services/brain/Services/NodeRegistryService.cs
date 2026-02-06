@@ -75,7 +75,7 @@ public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegis
             }
             catch (Exception ex)
             {
-                logger.LogError("Error processing key {Key} during stale cleanup", key);
+                logger.LogError(ex, "Error processing key {Key} during stale cleanup", key);
             }
         }
 
