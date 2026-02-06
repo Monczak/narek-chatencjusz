@@ -17,8 +17,8 @@ class NarekChatencjuszBot(discord.Bot):
         logging.info("Loading cogs...")
 
         self.add_cog(self.container.util_cog(bot=self))
-        self.add_cog(self.container.state_cog(bot=self, node_id=self.node_id))
-        self.add_cog(self.container.voice_cog(bot=self, node_id=self.node_id))
+        self.add_cog(self.container.state_cog(bot=self))
+        self.add_cog(self.container.voice_cog(bot=self))
 
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")

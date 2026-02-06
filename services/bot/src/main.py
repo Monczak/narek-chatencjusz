@@ -12,20 +12,24 @@ def main():
     with open(".version", "r") as version_file:
         VERSION = version_file.read().strip()
     
-    NODE_ID = os.getenv("NODE_ID", f"bot-{uuid.uuid4().hex[:8]}")
+    node_id = os.getenv("NODE_ID", f"bot-{uuid.uuid4().hex[:8]}")
 
     logging.info(f"Starting Narek Chatencjusz bot service - version {VERSION}")
-    logging.info(f"Node ID: {NODE_ID}")
+    logging.info(f"Node ID: {node_id}")
 
     container = Container()
+
+    container.node_id.override(node_id)
 
     logging.info("Initializing resources...")
     container.init_resources()
 
+    container.wire(modules=[__name__])
+
     try:
         bot = NarekChatencjuszBot(
             container=container,
-            node_id=NODE_ID,
+            node_id=node_id,
             version=VERSION
         )
         bot.setup_cogs()

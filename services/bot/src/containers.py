@@ -7,10 +7,14 @@ from generated import brain_pb2_grpc
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
+from services.state import StateService
+from services.voice import VoiceService
 from services.util import UtilService
 
 class Container(containers.DeclarativeContainer):
     config = providers.Configuration(pydantic_settings=[Settings()]) # type: ignore
+
+    node_id = providers.Object(None)
 
     brain_grpc_channel = providers.Resource(
         init_grpc_channel,
@@ -27,9 +31,20 @@ class Container(containers.DeclarativeContainer):
         url=config.valkey_url
     )
 
+    state_service = providers.Factory(
+        StateService,
+        valkey=valkey_client,
+        node_id=node_id
+    )
+
     util_service = providers.Factory(
         UtilService,
         brain=brain_stub
+    )
+
+    voice_service = providers.Factory(
+        VoiceService,
+        brain=brain_stub,
     )
 
     util_cog = providers.Factory(
@@ -39,10 +54,11 @@ class Container(containers.DeclarativeContainer):
 
     state_cog = providers.Factory(
         StateManager,
-        valkey_client=valkey_client
+        state_service=state_service
     )
 
     voice_cog = providers.Factory(
         VoiceCog,
-        brain_stub=brain_stub
+        voice_service=voice_service,
+        node_id=node_id
     )
