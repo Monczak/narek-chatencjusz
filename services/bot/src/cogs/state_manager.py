@@ -49,7 +49,7 @@ class StateManager(commands.Cog):
                 self.state.register_guild_channel(gid, current_channel_id)
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):        
         if member.id != self.bot.user.id: # type: ignore
             return
         
@@ -62,7 +62,7 @@ class StateManager(commands.Cog):
         if after.channel is None:
             expected_channel_id = self.state.get_registered_channel(gid)
             
-            if expected_channel_id and before.channel and expected_channel_id != before.channel.id:
+            if expected_channel_id and before.channel and expected_channel_id != str(before.channel.id):
                 # Move in progress - ignore
                 return
             

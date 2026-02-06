@@ -6,7 +6,12 @@ from generated import brain_pb2
 from services.voice import VoiceService
 
 class CommandListener:
-    def __init__(self, valkey_client: Valkey, node_id: str, voice_service: VoiceService):
+    def __init__(
+        self, 
+        valkey_client: Valkey, 
+        node_id: str,
+        voice_service: VoiceService,
+    ):
         self.valkey = valkey_client
         self.node_id = node_id
         self.voice = voice_service
@@ -40,9 +45,16 @@ class CommandListener:
 
             match msg_type:
                 case "connect":
-                    await self.voice.execute_connect(cmd.connect.guild_id, cmd.connect.channel_id)
+                    await self.voice.execute_connect(
+                        guild_id=cmd.connect.guild_id, 
+                        channel_id=cmd.connect.channel_id, 
+                        correlation_id=cmd.connect.correlation_id
+                    )
                 case "disconnect":
-                    await self.voice.execute_disconnect(cmd.disconnect.guild_id)
+                    await self.voice.execute_disconnect(
+                        cmd.disconnect.guild_id,
+                        cmd.disconnect.correlation_id
+                    )
                 case "error":
                     pass
         except Exception as e:

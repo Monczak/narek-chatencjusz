@@ -8,6 +8,8 @@ from bot import NarekChatencjuszBot
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
+from services.interaction import InteractionService
+from services.response import ResponseService
 from services.messaging import CommandListener
 from services.state import StateService
 from services.voice import VoiceService
@@ -52,9 +54,19 @@ class Container(containers.DeclarativeContainer):
         brain=brain_stub
     )
 
+    response_service = providers.Factory(
+        ResponseService
+    )
+
+    interaction_service = providers.Singleton(
+        InteractionService
+    )
+
     voice_service = providers.Singleton(
         VoiceService,
-        brain=brain_stub,
+        brain_stub=brain_stub,
+        response_service=response_service,
+        interaction_service=interaction_service
     )
 
     util_cog = providers.Factory(
@@ -70,6 +82,8 @@ class Container(containers.DeclarativeContainer):
     voice_cog = providers.Factory(
         VoiceCog,
         voice_service=voice_service,
+        response_service=response_service,
+        interaction_service=interaction_service,
         node_id=node_id
     )
 

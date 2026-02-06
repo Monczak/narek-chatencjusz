@@ -25,6 +25,7 @@ message JoinChannelRequest {
   string guild_id = 1;
   string channel_id = 2;
   string node_id = 3;
+  optional string correlation_id = 4;
 }
 
 message JoinChannelResponse {
@@ -35,6 +36,7 @@ message JoinChannelResponse {
 message LeaveChannelRequest {
   string guild_id = 1;
   string node_id = 2;
+  optional string correlation_id = 3;
 }
 
 message LeaveChannelResponse {
@@ -46,15 +48,18 @@ message LeaveChannelResponse {
 message ConnectVoice {
   string guild_id = 1;
   string channel_id = 2;
+  optional string correlation_id = 3;
 }
 
 message DisconnectVoice {
   string guild_id = 1;
+  optional string correlation_id = 2;
 }
 
 message ErrorMessage {
   string guild_id = 1;
   string message = 2;
+  optional string correlation_id = 3;
 }
 
 message BrainCommand {

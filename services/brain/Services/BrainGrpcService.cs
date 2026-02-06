@@ -34,7 +34,7 @@ public class BrainGrpcService(
         switch (hasOwner, sameGuild, sameChannel)
         {
             case (true, true, true):
-                return new JoinChannelResponse { Success = true, Message = "Already connected" };
+                return new JoinChannelResponse { Success = false, Message = "Already connected" };
             
             case (true, false, _):
                 return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}" };
@@ -49,6 +49,7 @@ public class BrainGrpcService(
                     {
                         GuildId = request.GuildId,
                         ChannelId = request.ChannelId,
+                        CorrelationId = request.CorrelationId
                     }
                 };
                 await publisher.PublishCommandAsync(request.NodeId, cmd);
@@ -65,17 +66,25 @@ public class BrainGrpcService(
         ServerCallContext context)
     {
         var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
+        var isOwner = currentOwner == request.NodeId;
 
-        if (currentOwner == request.NodeId)
+        if (isOwner)
         {
             await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
-            
+            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.GuildId);
+        }
+
+        if (isOwner || !string.IsNullOrEmpty(request.CorrelationId))
+        {
             var cmd = new BrainCommand
             {
-                Disconnect = new DisconnectVoice { GuildId = request.GuildId }
+                Disconnect = new DisconnectVoice
+                {
+                    GuildId = request.GuildId, 
+                    CorrelationId = request.CorrelationId,
+                }
             };
             await publisher.PublishCommandAsync(request.NodeId, cmd);
-            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.GuildId);
         }
         
         return new LeaveChannelResponse { Success = true };
