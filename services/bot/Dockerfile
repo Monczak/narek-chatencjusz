@@ -1,10 +1,10 @@
-FROM ghcr.io/astral-sh/uv:alpine
+FROM ghcr.io/astral-sh/uv:python3.13-alpine
 
 RUN apk add --no-cache bash
 
 WORKDIR /app
 
-COPY services/bot/pyproject.toml services/bot/uv.lock ./
+COPY services/bot/pyproject.toml services/bot/uv.lock services/bot/.python-version ./
 RUN uv sync --frozen --no-install-project
 
 COPY shared/proto/ /app/proto/
