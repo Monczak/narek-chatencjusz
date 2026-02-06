@@ -1,24 +1,38 @@
+from typing import Callable, List
 import discord
 import logging
 
-from containers import Container
+from valkey import Valkey
 
 class NarekChatencjuszBot(discord.Bot):
-    def __init__(self, container: Container, node_id: str, version: str):
+    def __init__(
+        self, 
+        node_id: str, 
+        version: str,
+        valkey_client: Valkey,
+        util_cog_factory: Callable[..., discord.Cog],
+        state_cog_factory: Callable[..., discord.Cog],
+        voice_cog_factory: Callable[..., discord.Cog],
+        debug_guild_ids: List[int]
+    ):
         super().__init__(
-            debug_guilds=container.config.debug_guild_ids()
+            debug_guilds=debug_guild_ids
         )
 
-        self.container = container
         self.node_id = node_id
         self.version = version
+        self.valkey = valkey_client
+
+        self.util_cog_factory = util_cog_factory
+        self.state_cog_factory = state_cog_factory
+        self.voice_cog_factory = voice_cog_factory
 
     def setup_cogs(self):
         logging.info("Loading cogs...")
 
-        self.add_cog(self.container.util_cog(bot=self))
-        self.add_cog(self.container.state_cog(bot=self))
-        self.add_cog(self.container.voice_cog(bot=self))
+        self.add_cog(self.util_cog_factory(bot=self))
+        self.add_cog(self.state_cog_factory(bot=self))
+        self.add_cog(self.voice_cog_factory(bot=self))
 
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")
@@ -28,21 +42,20 @@ class NarekChatencjuszBot(discord.Bot):
         logging.info(f"Gracefully shutting down -- cleaning up voice connections...")
 
         try:
-            valkey = self.container.valkey_client()
             if self.voice_clients:
                 for vc in self.voice_clients:
                     try:
                         guild_id = vc.guild.id # type: ignore
                         logging.info(f"Disconnecting from guild {guild_id}")
 
-                        valkey.delete(f"guild:{guild_id}:connection")
-                        valkey.delete(f"guild:{guild_id}:channel")
+                        self.valkey.delete(f"guild:{guild_id}:connection")
+                        self.valkey.delete(f"guild:{guild_id}:channel")
 
                         await vc.disconnect(force=True)
                     except Exception as e:
                         logging.error(f"Error disconnecting from guild {vc.guild.id}: {e}") # type: ignore
             
-            valkey.delete(f"node:{self.node_id}:heartbeat")
+            self.valkey.delete(f"node:{self.node_id}:heartbeat")
         
         except Exception as e:
             logging.error(f"Error during graceful shutdown: {e}")
