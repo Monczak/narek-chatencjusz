@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: services/bot/Dockerfile
-    container_name: narek-chatencjusz-bot
     env_file:
       - ./services/bot/.env
     environment:
@@ -17,7 +16,6 @@ services:
     build:
       context: .
       dockerfile: services/brain/Dockerfile
-    container_name: narek-chatencjusz-brain
     environment:
       - Valkey__Url=valkey:6379
     restart: unless-stopped
@@ -26,7 +24,6 @@ services:
 
   valkey:
     image: valkey/valkey:9-alpine
-    container_name: narek-chatencjusz-valkey
     restart: unless-stopped
     ports:
       - "6379:6379"
