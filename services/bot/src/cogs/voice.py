@@ -31,24 +31,24 @@ class VoiceCog(commands.Cog):
         channel_to_join = ctx.author.voice.channel # type: ignore
 
         await self.response.respond_working(ctx)
-        correlation_id = self.interaction.register(ctx)
-
-        try:
-            success, message = self.voice.request_join(
-                guild_id=str(ctx.guild_id),
-                channel_id=str(channel_to_join.id),
-                node_id=self.node_id,
-                correlation_id=correlation_id
-            )
-
-            if not success:
-                self.interaction.discard(correlation_id)
-                await self.response.respond_error(ctx, f"Brain denied request: {message}")
         
-        except Exception as e:
-            logging.error(f"Failed to join VC: {e}")
-            self.interaction.discard(correlation_id)
-            await self.response.respond_error(ctx, "Something went wrong contacting the Brain.")
+        with self.interaction.long_interaction(ctx) as (correlation_id, handle):
+            try:
+                success, message = self.voice.request_join(
+                    guild_id=str(ctx.guild_id),
+                    channel_id=str(channel_to_join.id),
+                    node_id=self.node_id,
+                    correlation_id=correlation_id
+                )
+
+                if success:
+                    handle.keep()
+                else:
+                    await self.response.respond_error(ctx, f"Brain denied request: {message}")
+            
+            except Exception as e:
+                logging.error(f"Failed to join VC: {e}")
+                await self.response.respond_error(ctx, "Something went wrong contacting the Brain.")
 
     @discord.slash_command(name="leave", description="Disconnect from the voice channel")
     async def leave(self, ctx: discord.ApplicationContext):
@@ -57,16 +57,19 @@ class VoiceCog(commands.Cog):
             return
         
         await self.response.respond_working(ctx)
-        correlation_id = self.interaction.register(ctx)
+        
+        with self.interaction.long_interaction(ctx) as (correlation_id, handle):
+            try:
+                success = self.voice.request_leave(
+                    guild_id=str(ctx.guild_id), 
+                    node_id=self.node_id,
+                    correlation_id=correlation_id
+                )
 
-        try:
-            self.voice.request_leave(
-                guild_id=str(ctx.guild_id), 
-                node_id=self.node_id,
-                correlation_id=correlation_id
-            )
-        except Exception as e:
-            logging.error(f"Failed to leave VC: {e}")
-            self.interaction.discard(correlation_id)
-            await self.response.respond_error(ctx, "Something went wrong contacting the Brain.")
+                if success:
+                    handle.keep()
+
+            except Exception as e:
+                logging.error(f"Failed to leave VC: {e}")
+                await self.response.respond_error(ctx, "Something went wrong contacting the Brain.")
             

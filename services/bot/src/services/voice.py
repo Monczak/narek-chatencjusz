@@ -35,16 +35,18 @@ class VoiceService:
             logging.error(f"Brain voice join error: {e}")
             raise
     
-    def request_leave(self, guild_id: str, node_id: str, correlation_id: str) -> None:
+    def request_leave(self, guild_id: str, node_id: str, correlation_id: str) -> bool:
         try:
             req = brain_pb2.LeaveChannelRequest(
                 guild_id=guild_id, 
                 node_id=node_id,
                 correlation_id=correlation_id
             )
-            self.brain.LeaveChannel(req)
+            res = self.brain.LeaveChannel(req)
+            return res.success
         except Exception as e:
             logging.error(f"Brain voice leave error: {e}")
+            raise
     
     async def execute_connect(self, guild_id: str, channel_id: str, correlation_id: str):
         if not self.bot:

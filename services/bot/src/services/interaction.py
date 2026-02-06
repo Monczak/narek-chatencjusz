@@ -1,6 +1,7 @@
+import contextlib
 import uuid
 import discord
-from typing import Dict, Optional
+from typing import Dict, Generator, Optional, Tuple
 
 class InteractionService:
     def __init__(self):
@@ -20,3 +21,20 @@ class InteractionService:
         if not correlation_id:
             return
         self._pending.pop(correlation_id, None)
+
+    @contextlib.contextmanager
+    def long_interaction(self, ctx: discord.ApplicationContext):
+        correlation_id = self.register(ctx)
+        state = {"commit": False}
+
+        class Handle:
+            def keep(self): state["commit"] = True
+
+        try:
+            yield correlation_id, Handle()
+        except Exception:
+            self.discard(correlation_id)
+            raise
+        finally:
+            if not state["commit"]:
+                self.discard(correlation_id)
