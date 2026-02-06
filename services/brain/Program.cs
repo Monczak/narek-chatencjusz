@@ -12,6 +12,8 @@ builder.Services.AddGrpc();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 
+builder.Services.AddHostedService<StaleConnectionClearer>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

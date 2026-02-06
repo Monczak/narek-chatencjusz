@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import discord
 from discord.ext import commands
@@ -13,11 +14,11 @@ class VoiceCog(commands.Cog):
 
     @discord.slash_command(name="join", description="Join the voice channel you are currently in")
     async def join(self, ctx: discord.ApplicationContext):
-        if not ctx.author.voice or not ctx.author.voice.channel:
+        if not ctx.author.voice or not ctx.author.voice.channel: # type: ignore
             await ctx.respond("You are not in a voice channel!", ephemeral=True)
             return
 
-        channel_to_join = ctx.author.voice.channel
+        channel_to_join = ctx.author.voice.channel # type: ignore
         await ctx.defer()
 
         try:
@@ -26,11 +27,25 @@ class VoiceCog(commands.Cog):
 
             if res.success:
                 if res.instruction == 1: # CONNECT
-                    if ctx.voice_client:
-                        await ctx.voice_client.move_to(channel_to_join)
-                    else:
-                        await channel_to_join.connect()
+                    try:
+                        if ctx.voice_client:
+                            await ctx.voice_client.move_to(channel_to_join)
+                        else:
+                            await channel_to_join.connect()
+                    except Exception as e:
+                        logging.warning(f"Standard join/move failed ({e}) -- falling back to hard reconnect")
 
+                        try:
+                            if ctx.voice_client:
+                                await ctx.voice_client.disconnect(force=True)
+                                await asyncio.sleep(0.5) # Let the dust settle
+                            
+                            await channel_to_join.connect()
+                        except Exception as e2:
+                            logging.error(f"Hard reconnect failed: {e2}")
+                            await ctx.respond("Failed to connect to voice.", ephemeral=True)
+                            return
+                    
                     await ctx.respond(f"Joined {channel_to_join.mention}")
 
                 elif res.instruction == 0: # STAY

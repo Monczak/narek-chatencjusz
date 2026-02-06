@@ -47,4 +47,41 @@ public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegis
         await _db.KeyDeleteAsync($"guild:{guildId}:connection");
         await _db.KeyDeleteAsync($"guild:{guildId}:channel");
     }
+
+    public async Task CleanupStaleConnectionsAsync()
+    {
+        var server = redis.GetServer(redis.GetEndPoints().First());
+        var guildKeys = server.Keys(pattern: "guild:*:connection");
+
+        var cleanedCount = 0;
+
+        foreach (var key in guildKeys)
+        {
+            try
+            {
+                var nodeId = await _db.StringGetAsync(key);
+                if (nodeId.IsNullOrEmpty) continue;
+
+                var heartbeatKey = $"node:{nodeId}:heartbeat";
+                bool isAlive = await _db.KeyExistsAsync(heartbeatKey);
+
+                if (!isAlive)
+                {
+                    await _db.KeyDeleteAsync(key);
+                    logger.LogWarning("Cleaned up zombie connection mapped to dead node {NodeId} (key {Key})", nodeId,
+                        key);
+                    cleanedCount++;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError("Error processing key {Key} during stale cleanup", key);
+            }
+        }
+
+        if (cleanedCount > 0)
+        {
+            logger.LogInformation("Cleaned up {Count} stale connections", cleanedCount);
+        }
+    }
 }
