@@ -78,11 +78,11 @@ class VoiceService:
                 except Exception as e2:
                     logging.error(f"Hard reconnect failed: {e2}")
 
-            await self._complete_interaction(correlation_id, success=True, title="Connected", msg=f"Joined {channel_to_join.mention}")
+            await self.response.complete(correlation_id, success=True, title="Connected", description=f"Joined {channel_to_join.mention}")
         
         except Exception as e:
             logging.error(f"Error handling execute_connect: {e}")
-            await self._complete_interaction(correlation_id, success=False, title="Connection failed", msg=str(e))
+            await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
     
     async def execute_disconnect(self, guild_id: str, correlation_id: str | None):
         if not self.bot:
@@ -92,14 +92,5 @@ class VoiceService:
         if guild and guild.voice_client:
             await guild.voice_client.disconnect()
 
-        await self._complete_interaction(correlation_id, success=True, title="Disconnected", msg=f"Left the voice channel")
+        await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
 
-    async def _complete_interaction(self, correlation_id: str | None, success: bool, title: str, msg: str):
-        ctx = self.interaction.pop(correlation_id)
-        if not ctx:
-            return
-
-        if success:
-            await self.response.respond_success(ctx, title, msg)
-        else:
-            await self.response.respond_error(ctx, msg)

@@ -1,7 +1,29 @@
 import logging
 import discord
 
+from services.interaction import InteractionService
+
 class ResponseService:
+    def __init__(self, interaction_service: InteractionService):
+        self.interaction = interaction_service
+
+    async def complete(
+        self,
+        correlation_id: str | None,
+        success: bool,
+        title: str,
+        description: str,
+        ephemeral: bool = False
+    ):
+        ctx = self.interaction.pop(correlation_id)
+        if not ctx:
+            return
+        
+        if success:
+            await self.respond_success(ctx, title, description, ephemeral)
+        else:
+            await self.respond_error(ctx, title, ephemeral)
+
     async def respond_working(self, ctx: discord.ApplicationContext):
         await ctx.defer()
 

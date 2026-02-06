@@ -54,12 +54,13 @@ class Container(containers.DeclarativeContainer):
         brain=brain_stub
     )
 
-    response_service = providers.Factory(
-        ResponseService
-    )
-
     interaction_service = providers.Singleton(
         InteractionService
+    )
+
+    response_service = providers.Factory(
+        ResponseService,
+        interaction_service=interaction_service
     )
 
     voice_service = providers.Singleton(
