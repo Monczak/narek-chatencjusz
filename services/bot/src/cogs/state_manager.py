@@ -3,6 +3,7 @@ import socket
 import discord
 from discord.ext import commands, tasks
 
+from generated import brain_pb2
 from services.state import StateService
 
 class StateManager(commands.Cog):
@@ -34,8 +35,14 @@ class StateManager(commands.Cog):
             registered_node = self.state.get_registered_node(gid)
 
             if registered_node is None:
-                logging.warning(f"Healing: I am in guild {guild_id} but Valkey didn't know -- registering session")
-                self.state.register_guild_session(gid)
+                logging.warning(f"Healing: I am in guild {guild_id} but Valkey didn't know -- reconciling state")
+                current_channel_id = str(vc.channel.id) # type: ignore
+                self.state.notify_state_change(
+                    gid,
+                    current_channel_id,
+                    brain_pb2.VoiceStateReason.RECONCILE_MISSING
+                )
+
             elif registered_node != self.state.node_id:
                 logging.warning(f"Conflict: I am in guild {guild_id} but Valkey thinks {registered_node} is there -- disconnecting")
                 await vc.disconnect(force=True)
@@ -46,7 +53,11 @@ class StateManager(commands.Cog):
 
             if registered_channel != current_channel_id: # type: ignore
                 logging.warning(f"Reconciling: Channel mismatch in guild {guild_id}. Valkey: {registered_channel} -> Real: {vc.channel.id}") # type: ignore
-                self.state.register_guild_channel(gid, current_channel_id)
+                self.state.notify_state_change(
+                    gid, 
+                    current_channel_id, 
+                    brain_pb2.VoiceStateReason.RECONCILE_DRIFT
+                )
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):        
@@ -67,8 +78,12 @@ class StateManager(commands.Cog):
                 return
             
             # Otherwise it's a real disconnect
-            logging.warning(f"Detected manual disconnect in guild {gid} -- cleaning Valkey")
-            self.state.clear_guild_session(gid)
+            logging.warning(f"Detected manual disconnect in guild {gid} -- reconciling state")
+            self.state.notify_state_change(
+                gid, 
+                None, 
+                brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
+            )
             return
         
         # Moved to another channel
@@ -81,5 +96,9 @@ class StateManager(commands.Cog):
                 return
             
             # We are somewhere else - might have been moved manually
-            logging.info(f"Detected move to new channel {after.channel.id} -- updating Valkey")
-            self.state.update_guild_session(gid, current_channel_id)
+            logging.info(f"Detected move to new channel {after.channel.id} -- reconciling state")
+            self.state.notify_state_change(
+                gid, 
+                current_channel_id, 
+                brain_pb2.VoiceStateReason.MANUAL_MOVE
+            )

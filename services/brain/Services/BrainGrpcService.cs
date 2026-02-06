@@ -1,6 +1,5 @@
 using BrainService.Proto;
 using Grpc.Core;
-using StackExchange.Redis;
 
 namespace BrainService.Services;
 
@@ -88,5 +87,30 @@ public class BrainGrpcService(
         }
         
         return new LeaveChannelResponse { Success = true };
+    }
+
+    public override async Task<VoiceStateAcknowledgement> NotifyVoiceState(VoiceStateNotification request, ServerCallContext context)
+    {
+        if (request.HasChannelId)
+        {
+            // Bot is connected
+            logger.LogInformation("State sync ({Reason}): Node {NodeId} moved/detected in Guild {GuildId} Channel {ChannelId}", 
+                request.Reason, request.NodeId, request.GuildId, request.ChannelId);
+            await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
+        }
+        else
+        {
+            // Bot is disconnected
+            var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
+            var isOwner = currentOwner == request.NodeId;
+            if (currentOwner == request.NodeId)
+            {
+                logger.LogInformation("State sync ({Reason}): Node {NodeId} disconnected from Guild {GuildId}", 
+                    request.Reason, request.NodeId, request.GuildId);
+                await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
+            }
+        }
+
+        return new VoiceStateAcknowledgement { Success = true };
     }
 }

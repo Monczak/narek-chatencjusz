@@ -11,6 +11,16 @@ service Brain {
   // Voice control
   rpc JoinChannel (JoinChannelRequest) returns (JoinChannelResponse);
   rpc LeaveChannel (LeaveChannelRequest) returns (LeaveChannelResponse);
+
+  rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAcknowledgement);
+}
+
+enum VoiceStateReason {
+  UNKNOWN = 0;
+  MANUAL_MOVE = 1;       // User moved bot
+  MANUAL_DISCONNECT = 2; // User disconnected bot
+  RECONCILE_MISSING = 3; // Bot was connected but state was missing
+  RECONCILE_DRIFT = 4;   // Bot was in channel A, state said B
 }
 
 message PingRequest {
@@ -40,6 +50,17 @@ message LeaveChannelRequest {
 }
 
 message LeaveChannelResponse {
+  bool success = 1;
+}
+
+message VoiceStateNotification {  
+  string guild_id = 1;
+  string node_id = 2;
+  optional string channel_id = 3;
+  VoiceStateReason reason = 4;
+}
+
+message VoiceStateAcknowledgement {
   bool success = 1;
 }
 

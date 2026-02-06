@@ -46,7 +46,8 @@ class Container(containers.DeclarativeContainer):
     state_service = providers.Factory(
         StateService,
         valkey=valkey_client,
-        node_id=node_id
+        brain_stub=brain_stub,
+        node_id=node_id,
     )
 
     util_service = providers.Factory(

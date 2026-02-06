@@ -47,7 +47,7 @@ class VoiceService:
         except Exception as e:
             logging.error(f"Brain voice leave error: {e}")
             raise
-    
+
     async def execute_connect(self, guild_id: str, channel_id: str, correlation_id: str):
         if not self.bot:
             raise RuntimeError("Bot not set")

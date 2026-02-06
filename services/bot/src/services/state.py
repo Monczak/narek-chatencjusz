@@ -1,10 +1,14 @@
 import json
+import logging
 from typing import Optional
 from valkey import Valkey
 
+from generated import brain_pb2, brain_pb2_grpc
+
 class StateService:
-    def __init__(self, valkey: Valkey, node_id: str) -> None:
+    def __init__(self, valkey: Valkey, brain_stub: brain_pb2_grpc.BrainStub, node_id: str) -> None:
         self.valkey = valkey
+        self.brain = brain_stub
         self.node_id = node_id
 
     def _get_node_heartbeat_key(self):
@@ -28,17 +32,18 @@ class StateService:
     
     def get_registered_channel(self, guild_id: str):
         return self.valkey.get(self._get_guild_channel_key(guild_id))
+
     
-    def register_guild_session(self, guild_id: str):
-        self.valkey.set(self._get_guild_connection_key(guild_id), self.node_id)
-
-    def register_guild_channel(self, guild_id: str, channel_id: str):
-        self.valkey.set(self._get_guild_channel_key(guild_id), channel_id)
-
-    def update_guild_session(self, guild_id: str, channel_id: str):
-        self.register_guild_session(guild_id)
-        self.register_guild_channel(guild_id, channel_id)
-
-    def clear_guild_session(self, guild_id: str) -> None:
-        self.valkey.delete(self._get_guild_connection_key(guild_id))
-        self.valkey.delete(self._get_guild_channel_key(guild_id))
+    def notify_state_change(self, guild_id: str, channel_id: str | None, reason):
+        try:
+            req = brain_pb2.VoiceStateNotification(
+                guild_id=guild_id,
+                node_id=self.node_id,
+                reason=reason
+            )
+            if channel_id:
+                req.channel_id = channel_id
+            
+            self.brain.NotifyVoiceState(req)
+        except Exception as e:
+            logging.error(f"Failed to notify Brain of state change: {e}")
