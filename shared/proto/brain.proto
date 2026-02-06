@@ -30,12 +30,6 @@ message JoinChannelRequest {
 message JoinChannelResponse {
   bool success = 1;
   string message = 2;
-  enum Instruction {
-    STAY = 0;
-    CONNECT = 1;
-    DISCONNECT = 2;
-  }
-  Instruction instruction = 3;
 }
 
 message LeaveChannelRequest {
@@ -46,3 +40,28 @@ message LeaveChannelRequest {
 message LeaveChannelResponse {
   bool success = 1;
 }
+
+// --- Event-Driven Messages ---
+
+message ConnectVoice {
+  string guild_id = 1;
+  string channel_id = 2;
+}
+
+message DisconnectVoice {
+  string guild_id = 1;
+}
+
+message ErrorMessage {
+  string guild_id = 1;
+  string message = 2;
+}
+
+message BrainCommand {
+  oneof command {
+    ConnectVoice connect = 1;
+    DisconnectVoice disconnect = 2;
+    ErrorMessage error = 3;
+  }
+}
+

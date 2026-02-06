@@ -4,6 +4,9 @@ import logging
 
 from valkey import Valkey
 
+from services.messaging import CommandListener
+from services.voice import VoiceService
+
 class NarekChatencjuszBot(discord.Bot):
     def __init__(
         self, 
@@ -13,7 +16,9 @@ class NarekChatencjuszBot(discord.Bot):
         util_cog_factory: Callable[..., discord.Cog],
         state_cog_factory: Callable[..., discord.Cog],
         voice_cog_factory: Callable[..., discord.Cog],
-        debug_guild_ids: List[int]
+        debug_guild_ids: List[int],
+        voice_service: VoiceService,
+        command_listener: CommandListener
     ):
         super().__init__(
             debug_guilds=debug_guild_ids
@@ -27,6 +32,9 @@ class NarekChatencjuszBot(discord.Bot):
         self.state_cog_factory = state_cog_factory
         self.voice_cog_factory = voice_cog_factory
 
+        self.voice_service = voice_service
+        self.command_listener = command_listener
+
     def setup_cogs(self):
         logging.info("Loading cogs...")
 
@@ -36,6 +44,13 @@ class NarekChatencjuszBot(discord.Bot):
 
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")
+
+        self.voice_service.set_bot(self)
+        logging.info("VoiceService linked to bot instance")
+
+        self.loop.create_task(self.command_listener.start())
+        logging.info("CommandListener started")
+
         logging.info(f"Narek Chatencjusz bot service is up and running")
 
     async def close(self):

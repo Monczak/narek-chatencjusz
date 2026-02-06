@@ -8,6 +8,7 @@ from bot import NarekChatencjuszBot
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
+from services.messaging import CommandListener
 from services.state import StateService
 from services.voice import VoiceService
 from services.util import UtilService
@@ -30,7 +31,14 @@ class Container(containers.DeclarativeContainer):
 
     valkey_client = providers.Resource(
         init_valkey_client, 
-        url=config.valkey_url
+        url=config.valkey_url,
+        decode_responses=True
+    )
+
+    valkey_binary_client = providers.Resource(
+        init_valkey_client,
+        url=config.valkey_url,
+        decode_responses=False
     )
 
     state_service = providers.Factory(
@@ -44,7 +52,7 @@ class Container(containers.DeclarativeContainer):
         brain=brain_stub
     )
 
-    voice_service = providers.Factory(
+    voice_service = providers.Singleton(
         VoiceService,
         brain=brain_stub,
     )
@@ -65,6 +73,13 @@ class Container(containers.DeclarativeContainer):
         node_id=node_id
     )
 
+    command_listener = providers.Singleton(
+        CommandListener,
+        valkey_client=valkey_binary_client,
+        node_id=node_id,
+        voice_service=voice_service
+    )
+
     bot = providers.Singleton(
         NarekChatencjuszBot,
         node_id=node_id,
@@ -74,4 +89,6 @@ class Container(containers.DeclarativeContainer):
         util_cog_factory = util_cog.provider,
         state_cog_factory = state_cog.provider,
         voice_cog_factory = voice_cog.provider,
+        voice_service = voice_service,
+        command_listener = command_listener
     )

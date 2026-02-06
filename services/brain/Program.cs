@@ -11,6 +11,7 @@ builder.Services.AddGrpc();
 
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
+builder.Services.AddSingleton<CommandPublisher>();
 
 builder.Services.AddHostedService<StaleConnectionClearer>();
 

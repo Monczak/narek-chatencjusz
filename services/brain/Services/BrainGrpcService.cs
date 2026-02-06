@@ -6,7 +6,8 @@ namespace BrainService.Services;
 
 public class BrainGrpcService(
     ILogger<BrainGrpcService> logger,
-    NodeRegistryService nodeRegistry
+    NodeRegistryService nodeRegistry,
+    CommandPublisher publisher
 ) : Brain.BrainBase
 {
     public override Task<PingResponse> Ping(PingRequest request, ServerCallContext context)
@@ -33,19 +34,29 @@ public class BrainGrpcService(
         switch (hasOwner, sameGuild, sameChannel)
         {
             case (true, true, true):
-                return new JoinChannelResponse { Success = true, Message = "Already connected", Instruction = JoinChannelResponse.Types.Instruction.Stay };
+                return new JoinChannelResponse { Success = true, Message = "Already connected" };
             
             case (true, false, _):
-                return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}", Instruction = JoinChannelResponse.Types.Instruction.Disconnect };
+                return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}" };
             
             case (true, true, false) or (false, _, _):
                 await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
                 logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId}", request.NodeId, request.GuildId);
+
+                var cmd = new BrainCommand
+                {
+                    Connect = new ConnectVoice
+                    {
+                        GuildId = request.GuildId,
+                        ChannelId = request.ChannelId,
+                    }
+                };
+                await publisher.PublishCommandAsync(request.NodeId, cmd);
+                
                 return new JoinChannelResponse
                 {
                     Success = true,
                     Message = "Connection approved",
-                    Instruction = JoinChannelResponse.Types.Instruction.Connect
                 };
         }
     }
@@ -58,7 +69,13 @@ public class BrainGrpcService(
         if (currentOwner == request.NodeId)
         {
             await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
-            logger.LogInformation("Node {NodeId} left Guild {GuildId}", request.NodeId, request.GuildId);
+            
+            var cmd = new BrainCommand
+            {
+                Disconnect = new DisconnectVoice { GuildId = request.GuildId }
+            };
+            await publisher.PublishCommandAsync(request.NodeId, cmd);
+            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.GuildId);
         }
         
         return new LeaveChannelResponse { Success = true };
