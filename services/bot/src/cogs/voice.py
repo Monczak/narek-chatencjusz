@@ -25,13 +25,12 @@ class VoiceCog(commands.Cog):
     @discord.slash_command(name="join", description="Join the voice channel you are currently in")
     async def join(self, ctx: discord.ApplicationContext):
         if not ctx.author.voice or not ctx.author.voice.channel: # type: ignore
-            await ctx.respond("You are not in a voice channel!", ephemeral=True)
+            await self.response.respond_error(ctx, "You are not in a voice channel!", ephemeral=True)
             return
 
         channel_to_join = ctx.author.voice.channel # type: ignore
 
         await self.response.respond_working(ctx)
-
         correlation_id = self.interaction.register(ctx)
 
         try:
@@ -54,7 +53,7 @@ class VoiceCog(commands.Cog):
     @discord.slash_command(name="leave", description="Disconnect from the voice channel")
     async def leave(self, ctx: discord.ApplicationContext):
         if not ctx.voice_client:
-            await ctx.respond("I'm not connected to any voice channel.", ephemeral=True)
+            await self.response.respond_error(ctx, "I'm not connected to any voice channel.", ephemeral=True)
             return
         
         await self.response.respond_working(ctx)
