@@ -100,6 +100,7 @@ public class BrainGrpcService(
             logger.LogInformation("State sync ({Reason}): Node {NodeId} moved/detected in Guild {GuildId} Channel {ChannelId}", 
                 request.Reason, request.NodeId, request.GuildId, request.ChannelId);
             await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
+            await voiceSessionService.UpdateSessionChannelAsync(request.GuildId, request.ChannelId);
         }
         else
         {
@@ -120,32 +121,40 @@ public class BrainGrpcService(
 
     public override async Task<VoiceSessionEventAck> StreamVoiceSessionEvents(IAsyncStreamReader<VoiceSessionEvent> requestStream, ServerCallContext context)
     {
+        var nodeId = context.RequestHeaders.GetValue("node_id");
+        var activeGuilds = new HashSet<string>();
+        
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, 
             applicationLifetime.ApplicationStopping
         );
-        
+
         try
         {
             await foreach (var voiceSessionEvent in requestStream.ReadAllAsync(cts.Token))
             {
+                activeGuilds.Add(voiceSessionEvent.GuildId);
+                if (string.IsNullOrEmpty(nodeId))
+                {
+                    nodeId = voiceSessionEvent.NodeId;
+                }
+
                 await voiceSessionService.HandleEventAsync(voiceSessionEvent);
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or IOException)
         {
-            if (applicationLifetime.ApplicationStopping.IsCancellationRequested)
+            logger.LogWarning("Voice session event stream for Node {NodeId} disconnected - marking {Count} active sessions as unstable",
+                nodeId, activeGuilds.Count);
+
+            if (!string.IsNullOrEmpty(nodeId) && activeGuilds.Count > 0)
             {
-                logger.LogInformation("Voice event stream cancelled (server shutdown)");
+                foreach (var guildId in activeGuilds)
+                {
+                    logger.LogInformation("Marking session in Guild {GuildId} as unstable due to Node {NodeId} disconnect", guildId, nodeId);
+                    await voiceSessionService.HandleNodeDisconnectAsync(guildId);
+                }
             }
-            else
-            {
-                logger.LogInformation("Voice event stream cancelled (client cancelled)");
-            }
-        }
-        catch (IOException)
-        {
-            logger.LogInformation("Voice event stream cancelled (client disconnected)");
         }
         catch (Exception ex)
         {

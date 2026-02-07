@@ -5,4 +5,5 @@ public enum VoiceSessionMachineState
     Unstarted,
     Idle,
     Ended,
+    Unstable,
 }

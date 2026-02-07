@@ -37,10 +37,16 @@ public class VoiceSessionStateMachine
 
         _stateMachine.Configure(VoiceSessionMachineState.Idle)
             .Permit(VoiceSessionMachineTrigger.SessionEnded, VoiceSessionMachineState.Ended)
+            .Permit(VoiceSessionMachineTrigger.NodeDisconnected,  VoiceSessionMachineState.Unstable)
             .Ignore(VoiceSessionMachineTrigger.SessionStarted);
 
         _stateMachine.Configure(VoiceSessionMachineState.Ended)
             .Ignore(VoiceSessionMachineTrigger.SessionEnded);
+        
+        _stateMachine.Configure(VoiceSessionMachineState.Unstable)
+            .Permit(VoiceSessionMachineTrigger.NodeReconnected, VoiceSessionMachineState.Idle)
+            .Permit(VoiceSessionMachineTrigger.SessionEnded, VoiceSessionMachineState.Ended)
+            .Ignore(VoiceSessionMachineTrigger.NodeDisconnected);
         
         _stateMachine.OnTransitioned(t =>
         {
@@ -67,6 +73,25 @@ public class VoiceSessionStateMachine
         }
     }
 
+    public void UpdateChannel(string channelId)
+    {
+        if (State.ChannelId != channelId)
+        {
+            State.ChannelId = channelId;
+            IsDirty = true;
+        }
+    }
+    
+    public void HandleNodeDisconnected()
+    {
+        Fire(VoiceSessionMachineTrigger.NodeDisconnected);
+    }
+
+    public void Recover()
+    {
+        Fire(VoiceSessionMachineTrigger.NodeReconnected);
+    }
+
     private void HandleUserSpeakingUpdate(UserSpeakingUpdate update)
     {
         // TODO: Keep track of speaking users once VAD is implemented
@@ -90,12 +115,19 @@ public class VoiceSessionStateMachine
         switch (update.ChangeType)
         {
             case SessionUpdate.Types.ChangeType.Started:
-                _stateMachine.Fire(VoiceSessionMachineTrigger.SessionStarted);
+                Fire(VoiceSessionMachineTrigger.SessionStarted);
                 break;
             case SessionUpdate.Types.ChangeType.Ended:
-                _stateMachine.Fire(VoiceSessionMachineTrigger.SessionEnded);
+                Fire(VoiceSessionMachineTrigger.SessionEnded);
                 break;
         }
     }
-    
+
+    private void Fire(VoiceSessionMachineTrigger trigger)
+    {
+        if (_stateMachine.CanFire(trigger))
+        {
+            _stateMachine.Fire(trigger);
+        }
+    }
 }

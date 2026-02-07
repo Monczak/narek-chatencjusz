@@ -73,8 +73,10 @@ class EventStreamService:
             try:
                 logging.info("Opening voice event stream to Brain...")
                 if self.brain:
+                    metadata = (("node_id", self.node_id), )
                     stream_call = self.brain.StreamVoiceSessionEvents(
-                        self._event_generator() # type: ignore (BrainAsyncStub)
+                        self._event_generator(), # type: ignore (BrainAsyncStub)
+                        metadata=metadata
                     )
                     logging.info("Voice event stream opened")
                     await stream_call # type: ignore (BrainAsyncStub)

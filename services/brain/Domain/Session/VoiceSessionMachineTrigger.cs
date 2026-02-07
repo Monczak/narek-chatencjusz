@@ -6,4 +6,6 @@ public enum VoiceSessionMachineTrigger
     UserLeft,
     SessionStarted,
     SessionEnded,
+    NodeDisconnected,
+    NodeReconnected,
 }
