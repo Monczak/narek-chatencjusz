@@ -1,9 +1,13 @@
 using System.Text.Json;
+using RedLockNet;
 using StackExchange.Redis;
 
 namespace BrainService.Services;
 
-public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegistryService> logger)
+public class NodeRegistryService(
+    IConnectionMultiplexer redis,
+    IDistributedLockFactory lockFactory,
+    ILogger<NodeRegistryService> logger)
 {
     private readonly IDatabase _db = redis.GetDatabase();
     public async Task<string?> GetNodeForGuildAsync(string guildId)
@@ -38,6 +42,13 @@ public class NodeRegistryService(IConnectionMultiplexer redis, ILogger<NodeRegis
 
     public async Task RegisterGuildConnectionAsync(string guildId, string nodeId, string channelId)
     {
+        await using var redLock = await lockFactory.CreateLockAsync($"lock:guild:{guildId}", TimeSpan.FromSeconds(5));
+        if (!redLock.IsAcquired)
+        {
+            logger.LogWarning("Could not acquire lock for guild {GuildId}", guildId);
+            return;
+        }
+        
         await _db.StringSetAsync($"guild:{guildId}:connection", nodeId);
         await _db.StringSetAsync($"guild:{guildId}:channel", channelId);
     }
