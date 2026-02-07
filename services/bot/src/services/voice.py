@@ -66,9 +66,11 @@ class VoiceService:
                 logging.warning(f"Channel {channel_id} is invalid")
                 return
             
+            is_moving = guild.voice_client is not None and guild.voice_client.is_connected()
+
             try:
-                if guild.voice_client:
-                    await guild.voice_client.move_to(channel_to_join)
+                if is_moving:
+                    await guild.voice_client.move_to(channel_to_join) # type: ignore (Pylance doesn't understand logic)
                 else:
                     await channel_to_join.connect()
             except Exception as e:
@@ -81,7 +83,11 @@ class VoiceService:
                 except Exception as e2:
                     logging.error(f"Hard reconnect failed: {e2}")
 
-            self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.STARTED)
+            if not is_moving:
+                self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.STARTED)
+            else:
+                self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.MOVED)
+                
             await self.response.complete(correlation_id, success=True, title="Connected", description=f"Joined {channel_to_join.mention}")
         
         except Exception as e:
