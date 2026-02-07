@@ -14,7 +14,7 @@ service Brain {
 
   rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAck);
 
-  rpc StreamVoiceEvents (stream VoiceEvent) returns (VoiceEventAck);
+  rpc StreamVoiceSessionEvents (stream VoiceSessionEvent) returns (VoiceSessionEventAck);
 }
 
 enum VoiceStateReason {
@@ -68,7 +68,7 @@ message VoiceStateAck {
 
 // --- Event Streaming ---
 
-message VoiceEvent {
+message VoiceSessionEvent {
   string guild_id = 1;
   string node_id = 2;
   int64 timestamp = 3;
@@ -76,6 +76,7 @@ message VoiceEvent {
   oneof event_data {
     UserVoiceStateUpdate user_state = 4;
     UserSpeakingUpdate user_speaking = 5;
+    SessionUpdate session_update = 6;
   }
 }
 
@@ -97,7 +98,16 @@ message UserSpeakingUpdate {
   bool is_speaking = 2;
 }
 
-message VoiceEventAck {
+message SessionUpdate {
+  enum ChangeType {
+    UNKNOWN = 0;
+    STARTED = 1;
+    ENDED = 2;
+  }
+  ChangeType change_type = 1;
+}
+
+message VoiceSessionEventAck {
   bool success = 1;
 }
 

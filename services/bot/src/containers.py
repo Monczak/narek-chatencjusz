@@ -75,7 +75,8 @@ class Container(containers.DeclarativeContainer):
         VoiceService,
         brain_stub=brain_stub,
         response_service=response_service,
-        interaction_service=interaction_service
+        interaction_service=interaction_service,
+        event_stream=event_stream_service
     )
 
     util_cog = providers.Factory(

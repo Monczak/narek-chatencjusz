@@ -32,15 +32,29 @@ class EventStreamService:
                 pass
             self._task = None
 
+    def _get_time(self):
+        return int(time.time() * 1000)
+
     def push_user_state_update(self, guild_id: str, user: discord.Member | discord.User, channel_id: str, change_type):
-        event = brain_pb2.VoiceEvent(
+        event = brain_pb2.VoiceSessionEvent(
             guild_id=guild_id,
             node_id=self.node_id,
-            timestamp=int(time.time() * 1000),
+            timestamp=self._get_time(),
             user_state=brain_pb2.UserVoiceStateUpdate(
                 user_id=str(user.id),
                 user_display_name=user.display_name,
                 channel_id=channel_id,
+                change_type=change_type
+            )
+        )
+        self._queue.put_nowait(event)
+
+    def push_session_state_update(self, guild_id: str, change_type):
+        event = brain_pb2.VoiceSessionEvent(
+            guild_id=guild_id,
+            node_id=self.node_id,
+            timestamp=self._get_time(),
+            session_update=brain_pb2.SessionUpdate(
                 change_type=change_type
             )
         )
@@ -59,7 +73,7 @@ class EventStreamService:
             try:
                 logging.info("Opening voice event stream to Brain...")
                 if self.brain:
-                    stream_call = self.brain.StreamVoiceEvents(
+                    stream_call = self.brain.StreamVoiceSessionEvents(
                         self._event_generator() # type: ignore (BrainAsyncStub)
                     )
                     logging.info("Voice event stream opened")

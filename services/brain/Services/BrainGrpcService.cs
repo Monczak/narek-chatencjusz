@@ -116,7 +116,7 @@ public class BrainGrpcService(
         return new VoiceStateAck { Success = true };
     }
 
-    public override async Task<VoiceEventAck> StreamVoiceEvents(IAsyncStreamReader<VoiceEvent> requestStream, ServerCallContext context)
+    public override async Task<VoiceSessionEventAck> StreamVoiceSessionEvents(IAsyncStreamReader<VoiceSessionEvent> requestStream, ServerCallContext context)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, 
@@ -125,18 +125,25 @@ public class BrainGrpcService(
         
         try
         {
-            await foreach (var voiceEvent in requestStream.ReadAllAsync(cts.Token))
+            await foreach (var voiceSessionEvent in requestStream.ReadAllAsync(cts.Token))
             {
-                switch (voiceEvent.EventDataCase)
+                switch (voiceSessionEvent.EventDataCase)
                 {
-                    case VoiceEvent.EventDataOneofCase.UserState:
-                        var state = voiceEvent.UserState;
+                    case VoiceSessionEvent.EventDataOneofCase.UserState:
+                        var userState = voiceSessionEvent.UserState;
                         logger.LogInformation(
-                            "[Stream] Guild {GuildId}: User {User} ({UserId}) {Action} - Channel {ChannelId}",
-                            voiceEvent.GuildId, state.UserDisplayName, state.UserId, state.ChangeType, state.ChannelId);
+                            "[UserState] Guild {GuildId}: User {User} ({UserId}) {Action} - Channel {ChannelId}",
+                            voiceSessionEvent.GuildId, userState.UserDisplayName, userState.UserId, userState.ChangeType, userState.ChannelId);
                         // TODO: Forward this to the event bus
                         break;
-                    case VoiceEvent.EventDataOneofCase.UserSpeaking:
+                    case VoiceSessionEvent.EventDataOneofCase.SessionUpdate:
+                        var sessionState = voiceSessionEvent.SessionUpdate;
+                        logger.LogInformation(
+                            "[SessionState] Guild {GuildId}: {Action}",
+                            voiceSessionEvent.GuildId, sessionState.ChangeType);
+                        // TODO: Forward this to the event bus
+                        break;
+                    case VoiceSessionEvent.EventDataOneofCase.UserSpeaking:
                         // TODO: Implement once VAD is done
                         break;
                 }
@@ -162,6 +169,6 @@ public class BrainGrpcService(
             logger.LogError(ex, "Error reading voice event stream");
         }
         
-        return new VoiceEventAck { Success = true };
+        return new VoiceSessionEventAck { Success = true };
     }
 }
