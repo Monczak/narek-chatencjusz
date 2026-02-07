@@ -1,4 +1,5 @@
 using BrainService.Proto;
+using BrainService.Services.Session;
 using Grpc.Core;
 
 namespace BrainService.Services;
@@ -7,6 +8,7 @@ public class BrainGrpcService(
     ILogger<BrainGrpcService> logger,
     NodeRegistryService nodeRegistry,
     CommandPublisher publisher,
+    VoiceSessionService voiceSessionService,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -127,26 +129,7 @@ public class BrainGrpcService(
         {
             await foreach (var voiceSessionEvent in requestStream.ReadAllAsync(cts.Token))
             {
-                switch (voiceSessionEvent.EventDataCase)
-                {
-                    case VoiceSessionEvent.EventDataOneofCase.UserState:
-                        var userState = voiceSessionEvent.UserState;
-                        logger.LogInformation(
-                            "[UserState] Guild {GuildId}: User {User} ({UserId}) {Action} - Channel {ChannelId}",
-                            voiceSessionEvent.GuildId, userState.UserDisplayName, userState.UserId, userState.ChangeType, userState.ChannelId);
-                        // TODO: Forward this to the event bus
-                        break;
-                    case VoiceSessionEvent.EventDataOneofCase.SessionUpdate:
-                        var sessionState = voiceSessionEvent.SessionUpdate;
-                        logger.LogInformation(
-                            "[SessionState] Guild {GuildId}: {Action}",
-                            voiceSessionEvent.GuildId, sessionState.ChangeType);
-                        // TODO: Forward this to the event bus
-                        break;
-                    case VoiceSessionEvent.EventDataOneofCase.UserSpeaking:
-                        // TODO: Implement once VAD is done
-                        break;
-                }
+                await voiceSessionService.HandleEventAsync(voiceSessionEvent);
             }
         }
         catch (OperationCanceledException)
@@ -157,7 +140,7 @@ public class BrainGrpcService(
             }
             else
             {
-                logger.LogInformation("Voice event stream cancelled (client canceled)");
+                logger.LogInformation("Voice event stream cancelled (client cancelled)");
             }
         }
         catch (IOException)

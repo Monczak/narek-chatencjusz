@@ -15,7 +15,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
+    <PackageReference Include="RedLock.net" Version="2.3.2" />
     <PackageReference Include="StackExchange.Redis" Version="2.10.14" />
+    <PackageReference Include="Stateless" Version="5.20.1-dev-19407615528" />
   </ItemGroup>
   
   <ItemGroup>
