@@ -50,7 +50,7 @@ class Container(containers.DeclarativeContainer):
         node_id=node_id
     )
 
-    state_service = providers.Factory(
+    state_service = providers.Singleton(
         StateService,
         valkey=valkey_client,
         brain_stub=brain_stub,
@@ -76,7 +76,8 @@ class Container(containers.DeclarativeContainer):
         brain_stub=brain_stub,
         response_service=response_service,
         interaction_service=interaction_service,
-        event_stream=event_stream_service
+        event_stream=event_stream_service,
+        state_service=state_service
     )
 
     util_cog = providers.Factory(

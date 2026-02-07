@@ -1,15 +1,31 @@
+from dataclasses import dataclass
+from enum import Enum, auto
 import json
 import logging
-from typing import Optional
+import time
+from typing import Dict, Optional
 from valkey import Valkey
 
 from generated import brain_pb2, brain_pb2_grpc
+
+class VoiceTransitionType(Enum):
+    CONNECT = auto()
+    DISCONNECT = auto()
+
+@dataclass
+class VoiceTransition:
+    type: VoiceTransitionType
+    target_channel_id: str | None
+    timestamp: float
+    expiration: float
 
 class StateService:
     def __init__(self, valkey: Valkey, brain_stub: brain_pb2_grpc.BrainStub, node_id: str) -> None:
         self.valkey = valkey
         self.brain = brain_stub
         self.node_id = node_id
+
+        self._active_transitions: Dict[str, VoiceTransition] = {}
 
     def _get_node_heartbeat_key(self):
         return f"node:{self.node_id}:heartbeat"
@@ -46,3 +62,25 @@ class StateService:
             await self.brain.NotifyVoiceState(req) # type: ignore (BrainAsyncStub)
         except Exception as e:
             logging.error(f"Failed to notify Brain of state change: {e}")
+
+    def register_intent(self, guild_id: str, transition_type: VoiceTransitionType, target_channel_id: str | None = None, ttl: float = 10.0):
+        now = time.time()
+        self._active_transitions[guild_id] = VoiceTransition(
+            type=transition_type,
+            target_channel_id=target_channel_id,
+            timestamp=now,
+            expiration=now + ttl
+        )
+
+    def get_intent(self, guild_id: str):
+        intent = self._active_transitions.get(guild_id)
+        if intent:
+            if time.time() > intent.expiration:
+                del self._active_transitions[guild_id]
+                return None
+            return intent
+        return None
+    
+    def consume_intent(self, guild_id: str):
+        if guild_id in self._active_transitions:
+            del self._active_transitions[guild_id]

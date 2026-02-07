@@ -3,6 +3,7 @@ import discord
 import logging
 from typing import Optional, Tuple
 from generated import brain_pb2, brain_pb2_grpc
+from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
@@ -13,12 +14,15 @@ class VoiceService:
         brain_stub: brain_pb2_grpc.BrainStub,
         response_service: ResponseService,
         interaction_service: InteractionService,
-        event_stream: EventStreamService
+        event_stream: EventStreamService,
+        state_service: StateService
     ) -> None:
         self.brain = brain_stub
         self.response = response_service
         self.interaction = interaction_service
         self.event_stream = event_stream
+        self.state = state_service
+
         self.bot: discord.Bot | None = None # Injected later
 
     def set_bot(self, bot: discord.Bot):
@@ -54,6 +58,8 @@ class VoiceService:
     async def execute_connect(self, guild_id: str, channel_id: str, correlation_id: str):
         if not self.bot:
             raise RuntimeError("Bot not set")
+        
+        self.state.register_intent(guild_id, VoiceTransitionType.CONNECT, channel_id)
 
         try:
             guild = self.bot.get_guild(int(guild_id))
@@ -87,10 +93,11 @@ class VoiceService:
                 self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.STARTED)
             else:
                 self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.MOVED)
-                
+
             await self.response.complete(correlation_id, success=True, title="Connected", description=f"Joined {channel_to_join.mention}")
         
         except Exception as e:
+            self.state.consume_intent(guild_id)
             logging.error(f"Error handling execute_connect: {e}")
             await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
     
@@ -98,10 +105,16 @@ class VoiceService:
         if not self.bot:
             raise RuntimeError("Bot not set")
         
-        guild = self.bot.get_guild(int(guild_id))
-        if guild and guild.voice_client:
-            await guild.voice_client.disconnect()
+        self.state.register_intent(guild_id, VoiceTransitionType.DISCONNECT)
+        
+        try:
+            guild = self.bot.get_guild(int(guild_id))
+            if guild and guild.voice_client:
+                await guild.voice_client.disconnect()
 
-        self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.ENDED)
-        await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
+            self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.ENDED)
+            await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
+        except Exception:
+            self.state.consume_intent(guild_id)
+            raise
 

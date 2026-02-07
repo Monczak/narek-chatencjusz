@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import socket
 import discord
@@ -5,7 +6,7 @@ from discord.ext import commands, tasks
 
 from generated import brain_pb2
 from services.event_stream import EventStreamService
-from services.state import StateService
+from services.state import StateService, VoiceTransitionType
 
 class StateManager(commands.Cog):
     def __init__(self, bot: discord.Bot, state_service: StateService, event_stream: EventStreamService):
@@ -66,14 +67,24 @@ class StateManager(commands.Cog):
             return
         
         gid = str(member.guild.id)
+        intent = self.state.get_intent(gid)
 
-        # Manual disconnect
+        # --- Disconnection ---
         if after.channel is None:
-            expected_channel_id = self.state.get_registered_channel(gid)
-            
-            if expected_channel_id and before.channel and expected_channel_id != str(before.channel.id):
-                # Move in progress - ignore
+            # Did we intend to disconnect?
+            if intent and intent.type == VoiceTransitionType.DISCONNECT:
+                # All good
+                self.state.consume_intent(gid)
                 return
+            
+            # Did we get a spurious disconnect signal because the earlier voice connection died?
+            if member.guild.voice_client:
+                await asyncio.sleep(1.0) # Debounce
+                vc = member.guild.voice_client
+
+                if vc and vc.is_connected():
+                    logging.warning(f"Ignoring spurious disconnect in guild {gid}")
+                    return # Spurious disconnect
             
             # Otherwise it's a real disconnect
             logging.warning(f"Detected manual disconnect in guild {gid} -- reconciling state")
@@ -84,15 +95,27 @@ class StateManager(commands.Cog):
             )
             return
         
-        # Moved to another channel
+        # --- Moving or joining ---
         if after.channel is not None:
             current_channel_id = str(after.channel.id)
-            expected_channel_id = self.state.get_registered_channel(gid)
-
-            if expected_channel_id == current_channel_id:
-                # We are where the state says we should be - all good
-                return
             
+            # Did we intend to go here?
+            if intent and intent.type == VoiceTransitionType.CONNECT:
+                if intent.target_channel_id == current_channel_id:
+                    # All good
+                    self.state.consume_intent(gid)
+                    return
+                else:
+                    logging.warning(f"Bot landed in channel {current_channel_id} but meant to go to {intent.target_channel_id}")
+                    self.state.consume_intent(gid)
+                    return
+            
+            # Are we where we should be?
+            registered_channel = self.state.get_registered_channel(gid)
+            if registered_channel and registered_channel == current_channel_id:
+                logging.warning(f"Ignoring spurious move in guild {gid}")
+                return # Ignore spurious move event
+
             # We are somewhere else - might have been moved manually
             logging.info(f"Detected move to new channel {after.channel.id} -- reconciling state")
             await self.state.notify_state_change(
