@@ -93,6 +93,10 @@ class StateManager(commands.Cog):
                 None, 
                 brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
             )
+            self.event_stream.push_session_state_update(
+                guild_id=gid,
+                change_type=brain_pb2.SessionUpdate.ChangeType.ENDED
+            )
             return
         
         # --- Moving or joining ---
