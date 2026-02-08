@@ -1,0 +1,186 @@
+@page "/session/{GuildId}"
+@using BrainService.Proto
+@using Microsoft.AspNetCore.SignalR.Client
+@inject VoiceSessionService SessionService
+@inject NavigationManager Nav
+@inject NodeRegistryService NodeRegistryService
+@inject CommandPublisher CommandPublisher
+@inject ISnackbar Snackbar
+@implements IAsyncDisposable
+
+@if (_session == null)
+{
+    @if (_isLoading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Warning">Session for Guild @GuildId not found.</MudAlert>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/">Return to Dashboard</MudButton>
+    }
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" Class="d-flex">
+            <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.Start">
+                <MudText Typo="Typo.h4">Session Details</MudText>
+                <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Guild ID: @GuildId</MudText>
+            </MudStack>
+            <MudSpacer/>
+            <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.End">
+                <SessionBadge State="@_session.MachineState"/>
+                <MudText Typo="Typo.caption" Class="mt-1">Last Updated: @GetTimeAgo(_session.LastUpdated)</MudText>
+            </MudStack>
+        </MudItem>
+        
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5">Current State</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.h6">Channel ID</MudText>
+                            <MudText Typo="Typo.body1">@_session.ChannelId</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.h6">Connected Users</MudText>
+                            <MudText Typo="Typo.body1">@(_session.Users.Count > 0 ? string.Join(", ", _session.Users.SelectMany(u => u.DisplayName)) : "No users connected")</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+                
+            <MudCard Class="mt-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5">Session Logs</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">TODO</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5">Actions</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.Start">
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Error" 
+                                   StartIcon="@Icons.Material.Filled.CallEnd"
+                                   OnClick=@(async () => await EndSessionAsync())
+                                   Disabled="@_isBusy">
+                            End Session
+                        </MudButton>
+                            
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public required string GuildId { get; set; }
+
+    private VoiceSessionState? _session;
+    private HubConnection? _hubConnection;
+    private bool _isLoading = true;
+    private bool _isBusy = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSession();
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hub/dashboard"))
+            .WithAutomaticReconnect()
+            .Build();
+        
+        _hubConnection.On<VoiceSessionState>("SessionUpdated", OnSessionUpdated);
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task LoadSession()
+    {
+        _isLoading = true;
+        try
+        {
+            _session = await SessionService.GetSessionStateAsync(GuildId);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OnSessionUpdated(VoiceSessionState session)
+    {
+        if (session.GuildId != GuildId) return;
+
+        InvokeAsync(() =>
+        {
+            _session = session;
+            StateHasChanged();
+        });
+    }
+
+    private async Task EndSessionAsync()
+    {
+        if (_session == null) return;
+        _isBusy = true;
+
+        try
+        {
+            var nodeId = await NodeRegistryService.GetNodeForGuildAsync(GuildId);
+            if (string.IsNullOrEmpty(nodeId))
+            {
+                Snackbar.Add("No active node found for this session.", Severity.Error);
+                return;
+            }
+
+            var command = new BrainCommand
+            {
+                Disconnect = new DisconnectVoice
+                {
+                    GuildId = GuildId
+                }
+            };
+
+            await CommandPublisher.PublishCommandAsync(nodeId, command);
+            Snackbar.Add("End Session command sent.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to send command: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private string GetTimeAgo(DateTime lastUpdated)
+    {
+        var span = DateTime.UtcNow - lastUpdated;
+        return span.TotalSeconds < 60 ? "Just now" : $"{span.TotalMinutes:F0}m ago";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null) await _hubConnection.DisposeAsync();
+    }
+
+}
