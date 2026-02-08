@@ -28,11 +28,11 @@ class VoiceService:
     def set_bot(self, bot: discord.Bot):
         self.bot = bot
 
-    async def request_join(self, guild_id: str, channel_id: str, node_id: str, correlation_id: str) -> Tuple[bool, str]:
+    async def request_join(self, guild: discord.Guild, channel: discord.VoiceChannel, node_id: str, correlation_id: str) -> Tuple[bool, str]:
         try:
             req = brain_pb2.JoinChannelRequest(
-                guild_id=guild_id,
-                channel_id=channel_id,
+                guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
+                channel=brain_pb2.ChannelContext(id=str(channel.id), name=channel.name),
                 node_id=node_id,
                 correlation_id=correlation_id
             )
@@ -42,10 +42,10 @@ class VoiceService:
             logging.error(f"Brain voice join error: {e}")
             raise
     
-    async def request_leave(self, guild_id: str, node_id: str, correlation_id: str) -> bool:
+    async def request_leave(self, guild: discord.Guild, node_id: str, correlation_id: str) -> bool:
         try:
             req = brain_pb2.LeaveChannelRequest(
-                guild_id=guild_id, 
+                guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name), 
                 node_id=node_id,
                 correlation_id=correlation_id
             )
@@ -55,21 +55,21 @@ class VoiceService:
             logging.error(f"Brain voice leave error: {e}")
             raise
 
-    async def execute_connect(self, guild_id: str, channel_id: str, correlation_id: str):
+    async def execute_connect(self, guild_ctx: brain_pb2.GuildContext, channel_ctx: brain_pb2.ChannelContext, correlation_id: str):
         if not self.bot:
             raise RuntimeError("Bot not set")
         
-        self.state.register_intent(guild_id, VoiceTransitionType.CONNECT, channel_id)
+        self.state.register_intent(guild_ctx.id, VoiceTransitionType.CONNECT, channel_ctx.id)
 
         try:
-            guild = self.bot.get_guild(int(guild_id))
+            guild = self.bot.get_guild(int(guild_ctx.id))
             if not guild:
-                logging.warning(f"Guild {guild_id} not found during connect event handling")
+                logging.warning(f"Guild {guild_ctx.id} not found during connect event handling")
                 return
             
-            channel_to_join = guild.get_channel(int(channel_id))
+            channel_to_join = guild.get_channel(int(channel_ctx.id))
             if not channel_to_join or not isinstance(channel_to_join, discord.VoiceChannel):
-                logging.warning(f"Channel {channel_id} is invalid")
+                logging.warning(f"Channel {channel_ctx.id} is invalid")
                 return
             
             is_moving = guild.voice_client is not None and guild.voice_client.is_connected()
@@ -102,49 +102,58 @@ class VoiceService:
                     await channel_to_join.connect()
                 except Exception as e2:
                     logging.error(f"Hard reconnect failed: {e2}")
-                    self.state.consume_intent(guild_id)
+                    self.state.consume_intent(guild_ctx.id)
                     await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e2))
                     return
 
             if not is_moving:
-                self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.STARTED)
+                self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
             else:
-                self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.MOVED)
+                self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.MOVED, channel_to_join)
+
+            self.event_stream.push_channel_snapshot(
+                guild=guild,
+                channel=channel_to_join,
+                members=[m for m in channel_to_join.members if m.id != self.bot.user.id] # type: ignore
+            )
 
             await self.state.notify_state_change(
-                guild_id=guild_id,
-                channel_id=channel_id,
+                guild=guild,
+                channel=channel_to_join,
                 reason=brain_pb2.VoiceStateReason.CONNECT
             )
 
             await self.response.complete(correlation_id, success=True, title="Connected", description=f"Joined {channel_to_join.mention}")
         
         except Exception as e:
-            self.state.consume_intent(guild_id)
+            self.state.consume_intent(guild_ctx.id)
             logging.error(f"Error handling execute_connect: {e}")
             await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
     
-    async def execute_disconnect(self, guild_id: str, correlation_id: str | None):
+    async def execute_disconnect(self, guild_ctx: brain_pb2.GuildContext, correlation_id: str | None):
         if not self.bot:
             raise RuntimeError("Bot not set")
         
-        self.state.register_intent(guild_id, VoiceTransitionType.DISCONNECT)
+        self.state.register_intent(guild_ctx.id, VoiceTransitionType.DISCONNECT)
         
         try:
-            guild = self.bot.get_guild(int(guild_id))
-            if guild and guild.voice_client:
+            guild = self.bot.get_guild(int(guild_ctx.id))
+            if not guild:
+                raise ValueError(f"Guild {guild_ctx.id} does not exist")
+            
+            if guild.voice_client:
                 await guild.voice_client.disconnect()
 
-            self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.ENDED)
+            self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.ENDED, None)
 
             await self.state.notify_state_change(
-                guild_id=guild_id,
-                channel_id=None,
-                reason=brain_pb2.VoiceStateReason.DISCONNECT
+                guild=guild,
+                channel=None,
+                reason=brain_pb2.VoiceStateReason.DISCONNECT,
             )
 
             await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
         except Exception:
-            self.state.consume_intent(guild_id)
+            self.state.consume_intent(guild_ctx.id)
             raise
 

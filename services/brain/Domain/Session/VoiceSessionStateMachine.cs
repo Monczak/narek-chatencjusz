@@ -59,6 +59,12 @@ public class VoiceSessionStateMachine
 
     public void ProcessEvent(VoiceSessionEvent evt)
     {
+        if (State.NodeId != evt.NodeId)
+        {
+            State.NodeId = evt.NodeId;
+            IsDirty = true;
+        }
+        
         switch (evt.EventDataCase)
         {
             case VoiceSessionEvent.EventDataOneofCase.SessionUpdate:
@@ -70,14 +76,19 @@ public class VoiceSessionStateMachine
             case VoiceSessionEvent.EventDataOneofCase.UserSpeaking:
                 HandleUserSpeakingUpdate(evt.UserSpeaking);
                 break;
+            case VoiceSessionEvent.EventDataOneofCase.ChannelStateSnapshot:
+                HandleChannelStateSnapshot(evt.ChannelStateSnapshot);
+                break;
         }
     }
 
-    public void UpdateChannel(string channelId)
+    public void UpdateChannel(ChannelContext channel)
     {
-        if (State.ChannelId != channelId)
+        if (State.ChannelId != channel.Id)
         {
-            State.ChannelId = channelId;
+            _logger.LogInformation("UpdateChannel: {Channel}", channel);
+            State.ChannelId = channel.Id;
+            State.ChannelName = channel.Name;
             IsDirty = true;
         }
     }
@@ -102,10 +113,10 @@ public class VoiceSessionStateMachine
         switch (update.ChangeType)
         {
             case UserVoiceStateUpdate.Types.ChangeType.Joined:
-                if (State.Users.Add(new User(update.UserId, update.UserDisplayName))) IsDirty = true;
+                if (State.Users.Add(new User(update.User.Id, update.User.DisplayName))) IsDirty = true;
                 break;
             case UserVoiceStateUpdate.Types.ChangeType.Left:
-                if (State.Users.Remove(new User(update.UserId, update.UserDisplayName))) IsDirty = true;
+                if (State.Users.RemoveWhere(u => u.UserId == update.User.Id) > 0) IsDirty = true;
                 break;
         }
     }
@@ -120,6 +131,23 @@ public class VoiceSessionStateMachine
             case SessionUpdate.Types.ChangeType.Ended:
                 Fire(VoiceSessionMachineTrigger.SessionEnded);
                 break;
+        }
+    }
+    
+    private void HandleChannelStateSnapshot(ChannelStateSnapshot snapshot)
+    {
+        State.Users.Clear();
+        foreach (var user in snapshot.Users)
+        {
+            State.Users.Add(new User(user.Id, user.DisplayName));
+        }
+
+        IsDirty = true;
+
+        if (State.ChannelId != snapshot.Channel.Id)
+        {
+            State.ChannelId = snapshot.Channel.Id;
+            State.ChannelName = snapshot.Channel.Name;
         }
     }
 

@@ -26,7 +26,8 @@ else
         <MudItem xs="12" Class="d-flex">
             <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.Start">
                 <MudText Typo="Typo.h4">Session Details</MudText>
-                <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Guild ID: @GuildId</MudText>
+                <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Guild: @_session.GuildName</MudText>
+                <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Guild ID: @_session.GuildId</MudText>
             </MudStack>
             <MudSpacer/>
             <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.End">
@@ -44,13 +45,20 @@ else
                 </MudCardHeader>
                 <MudCardContent>
                     <MudGrid>
-                        <MudItem xs="6">
-                            <MudText Typo="Typo.h6">Channel ID</MudText>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.h6">Channel</MudText>
+                            <MudText Typo="Typo.body1">@_session.ChannelName</MudText>
                             <MudText Typo="Typo.body1">@_session.ChannelId</MudText>
                         </MudItem>
-                        <MudItem xs="6">
-                            <MudText Typo="Typo.h6">Connected Users</MudText>
-                            <MudText Typo="Typo.body1">@(_session.Users.Count > 0 ? string.Join(", ", _session.Users.SelectMany(u => u.DisplayName)) : "No users connected")</MudText>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.h6">Last Known Node</MudText>
+                            <MudText Typo="Typo.body1">@_session.NodeId</MudText>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.h6">Connected Users (@(_session.Users.Count))</MudText>
+                            <MudText Typo="Typo.body1">
+                                @(_session.Users.Count > 0 ? string.Join(", ", _session.Users.Select(u => u.DisplayName)) : "No users connected")
+                            </MudText>
                         </MudItem>
                     </MudGrid>
                 </MudCardContent>
@@ -94,11 +102,11 @@ else
 
 @code {
     [Parameter] public required string GuildId { get; set; }
-
+    
     private VoiceSessionState? _session;
     private HubConnection? _hubConnection;
     private bool _isLoading = true;
-    private bool _isBusy = false;
+    private bool _isBusy;
 
     protected override async Task OnInitializedAsync()
     {
@@ -155,7 +163,7 @@ else
             {
                 Disconnect = new DisconnectVoice
                 {
-                    GuildId = GuildId
+                    Guild = new GuildContext { Id = GuildId }
                 }
             };
 

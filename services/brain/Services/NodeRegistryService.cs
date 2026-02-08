@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BrainService.Proto;
 using RedLockNet;
 using StackExchange.Redis;
 
@@ -18,8 +19,8 @@ public class NodeRegistryService(
 
     public async Task<string?> GetChannelForGuildAsync(string guildId)
     {
-        var channelId = await _db.StringGetAsync($"guild:{guildId}:channel");
-        return channelId.IsNullOrEmpty ? null : channelId.ToString();
+        var channel = await _db.StringGetAsync($"guild:{guildId}:channel");
+        return channel.IsNullOrEmpty ? null : channel.ToString();
     }
 
     public async Task<string?> GetNodeAddressAsync(string nodeId)
@@ -40,23 +41,23 @@ public class NodeRegistryService(
         return null;
     }
 
-    public async Task RegisterGuildConnectionAsync(string guildId, string nodeId, string channelId)
+    public async Task RegisterGuildConnectionAsync(GuildContext guild, string nodeId, ChannelContext channel)
     {
-        await using var redLock = await lockFactory.CreateLockAsync($"lock:guild:{guildId}", TimeSpan.FromSeconds(5));
+        await using var redLock = await lockFactory.CreateLockAsync($"lock:guild:{guild.Id}", TimeSpan.FromSeconds(5));
         if (!redLock.IsAcquired)
         {
-            logger.LogWarning("Could not acquire lock for guild {GuildId}", guildId);
+            logger.LogWarning("Could not acquire lock for guild {GuildId}", guild.Id);
             return;
         }
         
-        await _db.StringSetAsync($"guild:{guildId}:connection", nodeId);
-        await _db.StringSetAsync($"guild:{guildId}:channel", channelId);
+        await _db.StringSetAsync($"guild:{guild.Id}:connection", nodeId);
+        await _db.StringSetAsync($"guild:{guild.Id}:channel", channel.Id);
     }
 
-    public async Task UnregisterGuildConnectionAsync(string guildId)
+    public async Task UnregisterGuildConnectionAsync(GuildContext guild)
     {
-        await _db.KeyDeleteAsync($"guild:{guildId}:connection");
-        await _db.KeyDeleteAsync($"guild:{guildId}:channel");
+        await _db.KeyDeleteAsync($"guild:{guild.Id}:connection");
+        await _db.KeyDeleteAsync($"guild:{guild.Id}:channel");
     }
 
     public async Task CleanupStaleConnectionsAsync()

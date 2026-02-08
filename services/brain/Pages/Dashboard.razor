@@ -23,8 +23,8 @@ else
                 <MudCard Class="h-100 cursor-pointer" @onclick="() => ViewSessionDetails(session.GuildId)">
                     <MudCardHeader>
                         <CardHeaderContent>
-                            <MudText Typo="Typo.h6">Guild: @session.GuildId</MudText>
-                            <MudText Typo="Typo.subtitle1">Channel: @session.ChannelId</MudText>
+                            <MudText Typo="Typo.h6">@session.GuildName (@(session.GuildId))</MudText>
+                            <MudText Typo="Typo.subtitle1">Channel: @session.ChannelName (@(session.ChannelId))</MudText>
                         </CardHeaderContent>
                         <CardHeaderActions>
                             <SessionBadge State="@session.MachineState"></SessionBadge>

@@ -12,9 +12,24 @@ service Brain {
   rpc JoinChannel (JoinChannelRequest) returns (JoinChannelResponse);
   rpc LeaveChannel (LeaveChannelRequest) returns (LeaveChannelResponse);
 
+  // Voice session state and events
   rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAck);
-
   rpc StreamVoiceSessionEvents (stream VoiceSessionEvent) returns (VoiceSessionEventAck);
+}
+
+message GuildContext {
+  string id = 1;
+  string name = 2;
+}
+
+message ChannelContext {
+  string id = 1;
+  string name = 2;
+}
+
+message UserContext {
+  string id = 1;
+  string display_name = 2;
 }
 
 enum VoiceStateReason {
@@ -36,8 +51,8 @@ message PingResponse {
 }
 
 message JoinChannelRequest {
-  string guild_id = 1;
-  string channel_id = 2;
+  GuildContext guild = 1;
+  ChannelContext channel = 2;
   string node_id = 3;
   optional string correlation_id = 4;
 }
@@ -48,7 +63,7 @@ message JoinChannelResponse {
 }
 
 message LeaveChannelRequest {
-  string guild_id = 1;
+  GuildContext guild = 1;
   string node_id = 2;
   optional string correlation_id = 3;
 }
@@ -58,9 +73,9 @@ message LeaveChannelResponse {
 }
 
 message VoiceStateNotification {  
-  string guild_id = 1;
-  string node_id = 2;
-  optional string channel_id = 3;
+  GuildContext guild = 1;
+  optional ChannelContext channel = 2;
+  string node_id = 3;
   VoiceStateReason reason = 4;
 }
 
@@ -71,7 +86,7 @@ message VoiceStateAck {
 // --- Event Streaming ---
 
 message VoiceSessionEvent {
-  string guild_id = 1;
+  GuildContext guild = 1;
   string node_id = 2;
   int64 timestamp = 3;
 
@@ -79,24 +94,24 @@ message VoiceSessionEvent {
     UserVoiceStateUpdate user_state = 4;
     UserSpeakingUpdate user_speaking = 5;
     SessionUpdate session_update = 6;
+    ChannelStateSnapshot channel_state_snapshot = 7;
   }
 }
 
 message UserVoiceStateUpdate {
-  string user_id = 1;
-  string user_display_name = 2;
-  string channel_id = 3;
+  UserContext user = 1;
+  ChannelContext channel = 2;
 
   enum ChangeType {
     UNKNOWN = 0;
     JOINED = 1;
     LEFT = 2;
   }
-  ChangeType change_type = 4;
+  ChangeType change_type = 3;
 }
 
 message UserSpeakingUpdate {
-  string user_id = 1;
+  UserContext user = 1;
   bool is_speaking = 2;
 }
 
@@ -108,6 +123,12 @@ message SessionUpdate {
     MOVED = 3;
   }
   ChangeType change_type = 1;
+  ChannelContext channel = 2;
+}
+
+message ChannelStateSnapshot {
+  ChannelContext channel = 1;
+  repeated UserContext users = 2;
 }
 
 message VoiceSessionEventAck {
@@ -117,18 +138,18 @@ message VoiceSessionEventAck {
 // --- Event-Driven Messages ---
 
 message ConnectVoice {
-  string guild_id = 1;
-  string channel_id = 2;
+  GuildContext guild = 1;
+  ChannelContext channel = 2;
   optional string correlation_id = 3;
 }
 
 message DisconnectVoice {
-  string guild_id = 1;
+  GuildContext guild = 1;
   optional string correlation_id = 2;
 }
 
 message ErrorMessage {
-  string guild_id = 1;
+  GuildContext guild = 1;
   string message = 2;
   optional string correlation_id = 3;
 }

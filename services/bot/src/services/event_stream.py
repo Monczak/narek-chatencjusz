@@ -1,5 +1,5 @@
 import asyncio
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, List
 import discord
 import logging
 import time
@@ -35,27 +35,50 @@ class EventStreamService:
     def _get_time(self):
         return int(time.time() * 1000)
 
-    def push_user_state_update(self, guild_id: str, user: discord.Member | discord.User, channel_id: str, change_type):
+    def push_user_state_update(self, guild: discord.Guild, user: discord.Member | discord.User, channel: discord.VoiceChannel, change_type):
         event = brain_pb2.VoiceSessionEvent(
-            guild_id=guild_id,
+            guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
             node_id=self.node_id,
             timestamp=self._get_time(),
             user_state=brain_pb2.UserVoiceStateUpdate(
-                user_id=str(user.id),
-                user_display_name=user.display_name,
-                channel_id=channel_id,
+                user=brain_pb2.UserContext(id=str(user.id), display_name=user.display_name),
+                channel=brain_pb2.ChannelContext(id=str(channel.id), name=channel.name),
                 change_type=change_type
             )
         )
         self._queue.put_nowait(event)
 
-    def push_session_state_update(self, guild_id: str, change_type):
+    def push_session_state_update(self, guild: discord.Guild, change_type, channel: discord.VoiceChannel | None):
+        update = brain_pb2.SessionUpdate(
+            change_type=change_type
+        )
+        if channel:
+            update.channel.CopyFrom(brain_pb2.ChannelContext(id=str(channel.id), name=channel.name))
+
         event = brain_pb2.VoiceSessionEvent(
-            guild_id=guild_id,
+            guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
             node_id=self.node_id,
             timestamp=self._get_time(),
-            session_update=brain_pb2.SessionUpdate(
-                change_type=change_type
+            session_update=update
+        )
+        self._queue.put_nowait(event)
+
+    def push_channel_snapshot(self, guild: discord.Guild, channel: discord.VoiceChannel, members: List[discord.Member]):
+        snapshot_users = [
+            brain_pb2.UserContext(
+                id=str(m.id),
+                display_name=m.display_name
+            )
+            for m in members
+        ]
+
+        event = brain_pb2.VoiceSessionEvent(
+            guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
+            node_id=self.node_id,
+            timestamp=self._get_time(),
+            channel_state_snapshot=brain_pb2.ChannelStateSnapshot(
+                channel=brain_pb2.ChannelContext(id=str(channel.id), name=channel.name),
+                users=snapshot_users
             )
         )
         self._queue.put_nowait(event)

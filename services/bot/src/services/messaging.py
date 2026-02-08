@@ -46,13 +46,13 @@ class CommandListener:
             match msg_type:
                 case "connect":
                     await self.voice.execute_connect(
-                        guild_id=cmd.connect.guild_id, 
-                        channel_id=cmd.connect.channel_id, 
+                        guild_ctx=cmd.connect.guild,
+                        channel_ctx=cmd.connect.channel,
                         correlation_id=cmd.connect.correlation_id
                     )
                 case "disconnect":
                     await self.voice.execute_disconnect(
-                        cmd.disconnect.guild_id,
+                        cmd.disconnect.guild,
                         cmd.disconnect.correlation_id
                     )
                 case "error":

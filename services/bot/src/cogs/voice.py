@@ -35,8 +35,8 @@ class VoiceCog(commands.Cog):
         with self.interaction.long_interaction(ctx) as (correlation_id, handle):
             try:
                 success, message = await self.voice.request_join(
-                    guild_id=str(ctx.guild_id),
-                    channel_id=str(channel_to_join.id),
+                    guild=ctx.guild, # type: ignore
+                    channel=channel_to_join, # type: ignore
                     node_id=self.node_id,
                     correlation_id=correlation_id
                 )
@@ -61,7 +61,7 @@ class VoiceCog(commands.Cog):
         with self.interaction.long_interaction(ctx) as (correlation_id, handle):
             try:
                 success = await self.voice.request_leave(
-                    guild_id=str(ctx.guild_id), 
+                    guild=ctx.guild, # type: ignore
                     node_id=self.node_id,
                     correlation_id=correlation_id
                 )

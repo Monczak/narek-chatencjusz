@@ -30,43 +30,55 @@ class StateManager(commands.Cog):
 
     @tasks.loop(seconds=5.0)
     async def reconcile_state(self):
-        connected_guilds = {vc.guild.id: vc for vc in self.bot.voice_clients if vc.is_connected()} # type: ignore
+        connected_guilds = {vc.guild: vc for vc in self.bot.voice_clients if vc.is_connected()} # type: ignore
 
-        for guild_id, vc in connected_guilds.items():
-            gid = str(guild_id)
+        for guild, vc in connected_guilds.items():
+            gid = str(guild.id)
+            channel: discord.VoiceChannel = vc.channel # type: ignore
 
             registered_node = self.state.get_registered_node(gid)
 
             if registered_node is None:
-                logging.warning(f"Healing: I am in guild {guild_id} but Valkey didn't know -- reconciling state")
-                current_channel_id = str(vc.channel.id) # type: ignore
+                logging.warning(f"Healing: I am in guild {gid} but Valkey didn't know -- reconciling state")
                 await self.state.notify_state_change(
-                    gid,
-                    current_channel_id,
-                    brain_pb2.VoiceStateReason.RECONCILE_MISSING
+                    guild=guild,
+                    channel=channel,
+                    reason=brain_pb2.VoiceStateReason.RECONCILE_MISSING
                 )
+                self._push_existing_channel_users(guild, channel)
 
             elif registered_node != self.state.node_id:
-                logging.warning(f"Conflict: I am in guild {guild_id} but Valkey thinks {registered_node} is there -- disconnecting")
+                logging.warning(f"Conflict: I am in guild {gid} but Valkey thinks {registered_node} is there -- disconnecting")
                 await vc.disconnect(force=True)
                 continue
             
-            current_channel_id = str(vc.channel.id) # type: ignore
             registered_channel = self.state.get_registered_channel(gid)
-
-            if registered_channel != current_channel_id: # type: ignore
-                logging.warning(f"Reconciling: Channel mismatch in guild {guild_id}. Valkey: {registered_channel} -> Real: {vc.channel.id}") # type: ignore
+            if registered_channel != str(channel.id):
+                logging.warning(f"Reconciling: Channel mismatch in guild {guild.id}. Valkey: {registered_channel} -> Real: {channel.id}")
                 await self.state.notify_state_change(
-                    gid, 
-                    current_channel_id, 
-                    brain_pb2.VoiceStateReason.RECONCILE_DRIFT
+                    guild=guild,
+                    channel=channel,
+                    reason=brain_pb2.VoiceStateReason.RECONCILE_DRIFT
                 )
+                self._push_existing_channel_users(guild, channel)
+
+    def _push_existing_channel_users(self, guild: discord.Guild, channel: discord.VoiceChannel):
+        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            return
+            
+        self.event_stream.push_channel_snapshot(
+            guild=guild,
+            channel=channel,
+            members=[m for m in channel.members if m.id != self.bot.user.id] # type: ignore
+        )
+
 
     async def _handle_bot_voice_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if before.channel == after.channel:
             return
         
-        gid = str(member.guild.id)
+        guild = member.guild
+        gid = str(guild.id)
         intent = self.state.get_intent(gid)
 
         # --- Disconnection ---
@@ -75,6 +87,11 @@ class StateManager(commands.Cog):
             if intent and intent.type == VoiceTransitionType.DISCONNECT:
                 # All good
                 self.state.consume_intent(gid)
+                return
+            
+            # Are we reconnecting?
+            if intent and intent.type == VoiceTransitionType.CONNECT:
+                logging.info(f"Ignoring disconnect in guild {gid} due to active CONNECT intent (likely reconnecting)")
                 return
             
             # Did we get a spurious disconnect signal because the earlier voice connection died?
@@ -89,13 +106,14 @@ class StateManager(commands.Cog):
             # Otherwise it's a real disconnect
             logging.warning(f"Detected manual disconnect in guild {gid} -- reconciling state")
             await self.state.notify_state_change(
-                gid, 
-                None, 
-                brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
+                guild=guild,
+                channel=None,
+                reason=brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
             )
             self.event_stream.push_session_state_update(
-                guild_id=gid,
-                change_type=brain_pb2.SessionUpdate.ChangeType.ENDED
+                guild=guild,
+                change_type=brain_pb2.SessionUpdate.ChangeType.ENDED,
+                channel=None
             )
             return
         
@@ -122,34 +140,34 @@ class StateManager(commands.Cog):
 
             # We are somewhere else - might have been moved manually
             logging.info(f"Detected move to new channel {after.channel.id} -- reconciling state")
+            self._push_existing_channel_users(guild, after.channel) # type: ignore
             await self.state.notify_state_change(
-                gid, 
-                current_channel_id, 
-                brain_pb2.VoiceStateReason.MANUAL_MOVE
+                guild=guild,
+                channel=after.channel, # type: ignore
+                reason=brain_pb2.VoiceStateReason.MANUAL_MOVE
             )
 
     async def _handle_user_voice_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if not member.guild.voice_client or not member.guild.voice_client.channel:
             return
         
-        bot_channel_id = member.guild.voice_client.channel.id # type: ignore
-        gid = str(member.guild.id)
+        bot_channel: discord.VoiceChannel = member.guild.voice_client.channel # type: ignore
 
         # User joined bot's channel
-        if after.channel and after.channel.id == bot_channel_id and (not before.channel or before.channel.id != bot_channel_id):
+        if after.channel and after.channel.id == bot_channel.id and (not before.channel or before.channel.id != bot_channel.id):
             self.event_stream.push_user_state_update(
-                guild_id=gid,
+                guild=member.guild,
                 user=member,
-                channel_id=str(bot_channel_id),
+                channel=bot_channel,
                 change_type=brain_pb2.UserVoiceStateUpdate.JOINED
             )
         
         # User left bot's channel
-        elif before.channel and before.channel.id == bot_channel_id and (not after.channel or after.channel.id != bot_channel_id):
+        elif before.channel and before.channel.id == bot_channel.id and (not after.channel or after.channel.id != bot_channel.id):
             self.event_stream.push_user_state_update(
-                guild_id=gid,
+                guild=member.guild,
                 user=member,
-                channel_id=str(bot_channel_id),
+                channel=bot_channel,
                 change_type=brain_pb2.UserVoiceStateUpdate.LEFT
             )
 

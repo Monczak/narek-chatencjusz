@@ -24,15 +24,15 @@ public class BrainGrpcService(
     public override async Task<JoinChannelResponse> JoinChannel(JoinChannelRequest request, 
         ServerCallContext context)
     {
-        logger.LogInformation("Node {NodeId} requesting to join Guild {GuildId}, Channel {ChannelId}", request.NodeId, request.GuildId, request.ChannelId);
+        logger.LogInformation("Node {NodeId} requesting to join Guild {GuildName} ({GuildId}), Channel {ChannelName} ({ChannelId})", 
+            request.NodeId, request.Guild.Name, request.Guild.Id, request.Channel.Name, request.Channel.Id);
 
-        var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
-        var currentChannel = await nodeRegistry.GetChannelForGuildAsync(request.GuildId);
+        var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
+        var currentChannelId = await nodeRegistry.GetChannelForGuildAsync(request.Guild.Id);
 
         var hasOwner = !string.IsNullOrEmpty(currentOwner);
         var sameGuild = currentOwner == request.NodeId;
-        var sameChannel = currentChannel == request.ChannelId;
-
+        var sameChannel = currentChannelId == request.Channel.Id;
         switch (hasOwner, sameGuild, sameChannel)
         {
             case (true, true, true):
@@ -42,14 +42,14 @@ public class BrainGrpcService(
                 return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}" };
             
             case (true, true, false) or (false, _, _):
-                logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId}", request.NodeId, request.GuildId);
+                logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId}", request.NodeId, request.Guild.Id);
 
                 var cmd = new BrainCommand
                 {
                     Connect = new ConnectVoice
                     {
-                        GuildId = request.GuildId,
-                        ChannelId = request.ChannelId,
+                        Guild = request.Guild,
+                        Channel = request.Channel,
                         CorrelationId = request.CorrelationId
                     }
                 };
@@ -66,12 +66,12 @@ public class BrainGrpcService(
     public override async Task<LeaveChannelResponse> LeaveChannel(LeaveChannelRequest request,
         ServerCallContext context)
     {
-        var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
+        var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
         var isOwner = currentOwner == request.NodeId;
 
         if (isOwner)
         {
-            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.GuildId);
+            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.Guild);
         }
 
         if (isOwner || !string.IsNullOrEmpty(request.CorrelationId))
@@ -80,7 +80,7 @@ public class BrainGrpcService(
             {
                 Disconnect = new DisconnectVoice
                 {
-                    GuildId = request.GuildId, 
+                    Guild = request.Guild, 
                     CorrelationId = request.CorrelationId,
                 }
             };
@@ -102,30 +102,30 @@ public class BrainGrpcService(
         var isDisconnectedState = request.Reason is VoiceStateReason.Disconnect 
             or VoiceStateReason.ManualDisconnect;
 
-        if (isConnectedState && request.HasChannelId)
+        if (isConnectedState && request.Channel != null)
         {
-            logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed connection in Guild {GuildId} Channel {ChannelId}", 
-                request.Reason, request.NodeId, request.GuildId, request.ChannelId);
+            logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed connection in Guild {Guild} Channel {Channel}", 
+                request.Reason, request.NodeId, request.Guild, request.Channel);
             
-            await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
-            await voiceSessionService.UpdateSessionChannelAsync(request.GuildId, request.ChannelId);
+            await nodeRegistry.RegisterGuildConnectionAsync(request.Guild, request.NodeId, request.Channel);
+            await voiceSessionService.UpdateSessionChannelAsync(request.Guild, request.Channel);
         }
         else if (isDisconnectedState)
         {
-            var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
+            var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
             var isOwner = currentOwner == request.NodeId;
             
             if (isOwner)
             {
-                logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed disconnection from Guild {GuildId}", 
-                    request.Reason, request.NodeId, request.GuildId);
-                await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
+                logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed disconnection from Guild {Guild}", 
+                    request.Reason, request.NodeId, request.Guild);
+                await nodeRegistry.UnregisterGuildConnectionAsync(request.Guild);
             }
         }
         else
         {
-            logger.LogWarning("Received ambiguous voice state notification from {NodeId} for Guild {GuildId}. Reason: {Reason}, HasChannel: {HasChannel}",
-                request.NodeId, request.GuildId, request.Reason, request.HasChannelId);
+            logger.LogWarning("Received ambiguous voice state notification from {NodeId} for Guild {Guild}. Reason: {Reason}, HasChannel: {HasChannel}",
+                request.NodeId, request.Guild, request.Reason, request.Channel != null);
         }
 
         return new VoiceStateAck { Success = true };
@@ -134,7 +134,7 @@ public class BrainGrpcService(
     public override async Task<VoiceSessionEventAck> StreamVoiceSessionEvents(IAsyncStreamReader<VoiceSessionEvent> requestStream, ServerCallContext context)
     {
         var nodeId = context.RequestHeaders.GetValue("node_id");
-        var activeGuilds = new HashSet<string>();
+        var activeGuilds = new HashSet<GuildContext>();
         
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, 
@@ -145,7 +145,7 @@ public class BrainGrpcService(
         {
             await foreach (var voiceSessionEvent in requestStream.ReadAllAsync(cts.Token))
             {
-                activeGuilds.Add(voiceSessionEvent.GuildId);
+                activeGuilds.Add(voiceSessionEvent.Guild);
                 if (string.IsNullOrEmpty(nodeId))
                 {
                     nodeId = voiceSessionEvent.NodeId;
@@ -161,10 +161,10 @@ public class BrainGrpcService(
 
             if (!string.IsNullOrEmpty(nodeId) && activeGuilds.Count > 0)
             {
-                foreach (var guildId in activeGuilds)
+                foreach (var guild in activeGuilds)
                 {
-                    logger.LogInformation("Marking session in Guild {GuildId} as unstable due to Node {NodeId} disconnect", guildId, nodeId);
-                    await voiceSessionService.HandleNodeDisconnectAsync(guildId);
+                    logger.LogInformation("Marking session in Guild {GuildId} as unstable due to Node {NodeId} disconnect", guild.Id, nodeId);
+                    await voiceSessionService.HandleNodeDisconnectAsync(guild);
                 }
             }
         }

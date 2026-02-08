@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from typing import Dict, Optional
+import discord
 from valkey import Valkey
 
 from generated import brain_pb2, brain_pb2_grpc
@@ -49,15 +50,15 @@ class StateService:
     def get_registered_channel(self, guild_id: str):
         return self.valkey.get(self._get_guild_channel_key(guild_id))
     
-    async def notify_state_change(self, guild_id: str, channel_id: str | None, reason):
+    async def notify_state_change(self, guild: discord.Guild, channel: discord.VoiceChannel | None, reason):
         try:
             req = brain_pb2.VoiceStateNotification(
-                guild_id=guild_id,
+                guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
                 node_id=self.node_id,
                 reason=reason
             )
-            if channel_id:
-                req.channel_id = channel_id
+            if channel:
+                req.channel.CopyFrom(brain_pb2.ChannelContext(id=str(channel.id), name=channel.name))
             
             await self.brain.NotifyVoiceState(req) # type: ignore (BrainAsyncStub)
         except Exception as e:

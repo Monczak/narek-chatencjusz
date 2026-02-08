@@ -41,29 +41,39 @@ public class VoiceSessionService(
 
     public async Task HandleEventAsync(VoiceSessionEvent evt)
     {
-        await ExecuteSessionTransactionAsync(evt.GuildId,
+        await ExecuteSessionTransactionAsync(evt.Guild,
             async loadedState =>
             {
-                var currentChannelId = await nodeRegistry.GetChannelForGuildAsync(evt.GuildId);
+                var registryChannelId = await nodeRegistry.GetChannelForGuildAsync(evt.Guild.Id);
                 
                 if (evt.SessionUpdate?.ChangeType == SessionUpdate.Types.ChangeType.Started)
                 {
                     // Check if we have an unstable session and the channels match - if so, resume the session
+                    var eventChannel = evt.SessionUpdate.Channel;
+                    var channelId = eventChannel?.Id ?? registryChannelId;
+                    var channelName = eventChannel?.Name;
+                    
                     if (loadedState is { MachineState: VoiceSessionMachineState.Unstable } &&
-                        loadedState.ChannelId == currentChannelId)
+                        loadedState.ChannelId == channelId)
                     {
-                        logger.LogInformation("Resuming unstable session for Guild {GuildId} in Channel {ChannelId}", evt.GuildId, currentChannelId);
+                        logger.LogInformation("Resuming unstable session for Guild {GuildId} in Channel {ChannelId}", evt.Guild.Id, channelId);
                         return loadedState;
                     }
                     
-                    logger.LogInformation("Starting new session for Guild {GuildId}", evt.GuildId);
-                    return new VoiceSessionState { GuildId = evt.GuildId, ChannelId = currentChannelId };
+                    logger.LogInformation("Starting new session for Guild {GuildId} in Channel {ChannelId}", evt.Guild.Id, channelId);
+                    return new VoiceSessionState
+                    {
+                        GuildId = evt.Guild.Id, 
+                        GuildName = evt.Guild.Name, 
+                        ChannelId = channelId, 
+                        ChannelName = channelName
+                    };
                 }
                 
-                var state = loadedState ?? new VoiceSessionState { GuildId = evt.GuildId };
-                if (string.IsNullOrEmpty(state.ChannelId) && !string.IsNullOrEmpty(currentChannelId))
+                var state = loadedState ?? new VoiceSessionState { GuildId = evt.Guild.Id, GuildName = evt.Guild.Name };
+                if (string.IsNullOrEmpty(state.ChannelId) && !string.IsNullOrEmpty(registryChannelId))
                 {
-                    state.ChannelId = currentChannelId;
+                    state.ChannelId = registryChannelId;
                 }
 
                 return state;
@@ -80,9 +90,9 @@ public class VoiceSessionService(
         );
     }
 
-    public async Task HandleNodeDisconnectAsync(string guildId)
+    public async Task HandleNodeDisconnectAsync(GuildContext guild)
     {
-        await ExecuteSessionTransactionAsync(guildId, loadedState =>
+        await ExecuteSessionTransactionAsync(guild, loadedState =>
             {
                 if (loadedState == null || loadedState.MachineState == VoiceSessionMachineState.Ended)
                     return Task.FromResult<VoiceSessionState?>(null);
@@ -93,33 +103,33 @@ public class VoiceSessionService(
         );
     }
 
-    public async Task UpdateSessionChannelAsync(string guildId, string channelId)
+    public async Task UpdateSessionChannelAsync(GuildContext guild, ChannelContext channel)
     {
-        await ExecuteSessionTransactionAsync(guildId,
+        await ExecuteSessionTransactionAsync(guild,
             loadedState =>
             {
                 if (loadedState == null || loadedState.MachineState == VoiceSessionMachineState.Ended)
                     return Task.FromResult<VoiceSessionState?>(null);
                 return Task.FromResult(loadedState)!;
             },
-            machine => machine.UpdateChannel(channelId),
+            machine => machine.UpdateChannel(channel),
             TimeSpan.FromSeconds(2)
         );
     }
 
     private async Task ExecuteSessionTransactionAsync(
-        string guildId,
+        GuildContext guild,
         Func<VoiceSessionState?, Task<VoiceSessionState?>> stateResolver,
         Action<VoiceSessionStateMachine> stateProcessAction,
         TimeSpan timeout)
     {
-        var lockKey = $"lock:session:{guildId}";
-        var dataKey = $"session:{guildId}";
+        var lockKey = $"lock:session:{guild.Id}";
+        var dataKey = $"session:{guild.Id}";
 
         await using var redLock = await lockFactory.CreateLockAsync(lockKey, timeout);
         if (!redLock.IsAcquired)
         {
-            logger.LogWarning("Could not acquire lock for guild {GuildId}", guildId);
+            logger.LogWarning("Could not acquire lock for guild {GuildId}", guild.Id);
             return;
         }
 
@@ -151,7 +161,7 @@ public class VoiceSessionService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error processing session transaction for guild {GuildId}", guildId);
+            logger.LogError(ex, "Error processing session transaction for guild {GuildId}", guild.Id);
             throw;
         }
     }
