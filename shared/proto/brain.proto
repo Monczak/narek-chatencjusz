@@ -19,10 +19,12 @@ service Brain {
 
 enum VoiceStateReason {
   UNKNOWN = 0;
-  MANUAL_MOVE = 1;       // User moved bot
-  MANUAL_DISCONNECT = 2; // User disconnected bot
-  RECONCILE_MISSING = 3; // Bot was connected but state was missing
-  RECONCILE_DRIFT = 4;   // Bot was in channel A, state said B
+  MANUAL_MOVE = 1;        // User moved bot
+  MANUAL_DISCONNECT = 2;  // User disconnected bot
+  RECONCILE_MISSING = 3;  // Bot was connected but state was missing
+  RECONCILE_DRIFT = 4;    // Bot was in channel A, state said B
+  CONNECT = 5;            // Bot successfully executed a Connect command
+  DISCONNECT = 6;         // Bot successfully executed a Disconnect command
 }
 
 message PingRequest {

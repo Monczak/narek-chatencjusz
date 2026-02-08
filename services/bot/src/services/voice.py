@@ -111,6 +111,12 @@ class VoiceService:
             else:
                 self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.MOVED)
 
+            await self.state.notify_state_change(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                reason=brain_pb2.VoiceStateReason.CONNECT
+            )
+
             await self.response.complete(correlation_id, success=True, title="Connected", description=f"Joined {channel_to_join.mention}")
         
         except Exception as e:
@@ -130,6 +136,13 @@ class VoiceService:
                 await guild.voice_client.disconnect()
 
             self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.ENDED)
+
+            await self.state.notify_state_change(
+                guild_id=guild_id,
+                channel_id=None,
+                reason=brain_pb2.VoiceStateReason.DISCONNECT
+            )
+
             await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
         except Exception:
             self.state.consume_intent(guild_id)

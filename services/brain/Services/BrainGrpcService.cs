@@ -42,7 +42,6 @@ public class BrainGrpcService(
                 return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}" };
             
             case (true, true, false) or (false, _, _):
-                await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
                 logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId}", request.NodeId, request.GuildId);
 
                 var cmd = new BrainCommand
@@ -72,7 +71,6 @@ public class BrainGrpcService(
 
         if (isOwner)
         {
-            await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
             logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.GuildId);
         }
 
@@ -94,26 +92,40 @@ public class BrainGrpcService(
 
     public override async Task<VoiceStateAck> NotifyVoiceState(VoiceStateNotification request, ServerCallContext context)
     {
-        if (request.HasChannelId)
+        // Definitely connected
+        var isConnectedState = request.Reason is VoiceStateReason.Connect 
+            or VoiceStateReason.ManualMove 
+            or VoiceStateReason.ReconcileMissing 
+            or VoiceStateReason.ReconcileDrift;
+
+        // Definitely disconnected
+        var isDisconnectedState = request.Reason is VoiceStateReason.Disconnect 
+            or VoiceStateReason.ManualDisconnect;
+
+        if (isConnectedState && request.HasChannelId)
         {
-            // Bot is connected
-            logger.LogInformation("State sync ({Reason}): Node {NodeId} moved/detected in Guild {GuildId} Channel {ChannelId}", 
+            logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed connection in Guild {GuildId} Channel {ChannelId}", 
                 request.Reason, request.NodeId, request.GuildId, request.ChannelId);
+            
             await nodeRegistry.RegisterGuildConnectionAsync(request.GuildId, request.NodeId, request.ChannelId);
             await voiceSessionService.UpdateSessionChannelAsync(request.GuildId, request.ChannelId);
         }
-        else
+        else if (isDisconnectedState)
         {
-            // Bot is disconnected
             var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.GuildId);
             var isOwner = currentOwner == request.NodeId;
             
             if (isOwner)
             {
-                logger.LogInformation("State sync ({Reason}): Node {NodeId} disconnected from Guild {GuildId}", 
+                logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed disconnection from Guild {GuildId}", 
                     request.Reason, request.NodeId, request.GuildId);
                 await nodeRegistry.UnregisterGuildConnectionAsync(request.GuildId);
             }
+        }
+        else
+        {
+            logger.LogWarning("Received ambiguous voice state notification from {NodeId} for Guild {GuildId}. Reason: {Reason}, HasChannel: {HasChannel}",
+                request.NodeId, request.GuildId, request.Reason, request.HasChannelId);
         }
 
         return new VoiceStateAck { Success = true };
