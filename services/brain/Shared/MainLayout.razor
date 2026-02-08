@@ -1,6 +1,6 @@
 @inherits LayoutComponentBase
 
-<MudThemeProvider IsDarkMode="true"/>
+<MudThemeProvider IsDarkMode="true" Theme="@_customTheme"/>
 <MudDialogProvider/>
 <MudSnackbarProvider/>
 
@@ -26,4 +26,15 @@
 @code {
     bool _drawerOpen = true;
     void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    readonly MudTheme _customTheme = new()
+    {
+        Typography = new Typography
+        {
+            Default = new DefaultTypography
+            {
+                FontFamily = ["Source Sans 3", "Arial", "sans-serif"]
+            }
+        }
+    };
 }

@@ -18,6 +18,8 @@ services:
       dockerfile: services/brain/Dockerfile
     environment:
       - Valkey__Url=valkey:6379
+    ports:
+     - "8080:8080"
     restart: unless-stopped
     networks:
       - internal
