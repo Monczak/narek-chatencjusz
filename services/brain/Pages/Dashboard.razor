@@ -1,0 +1,105 @@
+@page "/"
+@inject VoiceSessionService SessionService
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+
+<MudText Typo="Typo.h4" Class="mb-4">Active Sessions</MudText>
+
+@if (_sessions == null)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true"/>
+}
+else if (!_sessions.Any())
+{
+    <MudAlert Severity="Severity.Info">No active voice sessions.</MudAlert>
+}
+else
+{
+    <MudGrid>
+        @foreach (var session in _sessions)
+        {
+            <MudItem xs="12">
+                <MudCard Class="h-100 cursor-pointer" @onclick="() => ViewSessionDetails(session.GuildId)">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">Guild: @session.GuildId</MudText>
+                            <MudText Typo="Typo.h6">Channel: @session.ChannelId</MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <SessionBadge State="@session.MachineState"></SessionBadge>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudStack Row="true" Spacing="4">
+                            <MudText>
+                                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small"/>
+                                @session.Users.Count Users
+                            </MudText>
+                            <MudText>
+                                <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small"/>
+                                @GetDuration(session)
+                            </MudText>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<VoiceSessionState>? _sessions;
+    private HubConnection? _hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sessions = await SessionService.GetSessionStatesAsync();
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(Nav.ToAbsoluteUri("/hub/dashboard"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<VoiceSessionState>("SessionUpdated", OnSessionUpdated);
+        await _hubConnection.StartAsync();
+    }
+
+    private void OnSessionUpdated(VoiceSessionState session)
+    {
+        // InvokeAsync is required because the event comes from a background thread/service
+        InvokeAsync(() =>
+        {
+            if (_sessions == null) return;
+
+            var existing = _sessions.FirstOrDefault(s => s.GuildId == session.GuildId);
+            if (existing != null)
+            {
+                var index = _sessions.IndexOf(existing);
+                _sessions[index] = session;
+            }
+            else
+            {
+                _sessions.Add(session);
+            }
+
+            _sessions = _sessions.OrderByDescending(x => x.LastUpdated).ToList();
+            StateHasChanged();
+        });
+    }
+
+    private void ViewSessionDetails(string guildId)
+    {
+        Nav.NavigateTo($"/session/{guildId}");
+    }
+
+    private string GetDuration(VoiceSessionState session)
+    {
+        var duration = DateTime.UtcNow - session.LastUpdated;
+        return duration.TotalMinutes < 1 ? "Just now" : $"{duration.TotalMinutes:F0}m ago";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null) await _hubConnection.DisposeAsync();
+    }
+}

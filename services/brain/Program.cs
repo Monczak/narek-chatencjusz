@@ -1,5 +1,8 @@
+using BrainService;
+using BrainService.Hubs;
 using BrainService.Services;
 using BrainService.Services.Session;
+using MudBlazor.Services;
 using RedLockNet;
 using RedLockNet.SERedis;
 using StackExchange.Redis;
@@ -21,6 +24,16 @@ builder.Services.AddSingleton<VoiceSessionService>();
 
 builder.Services.AddHostedService<StaleConnectionClearer>();
 
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+builder.Services.AddMudServices();
+
+var signalR = builder.Services.AddSignalR();
+signalR.AddStackExchangeRedis(valkeyUrl, options =>
+{
+    options.Configuration.ChannelPrefix = new RedisChannel("dashboard:updates", RedisChannel.PatternMode.Literal);
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -28,6 +41,23 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseStaticFiles();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/error?code=500");
+}
+
+app.UseStatusCodePagesWithReExecute("/error", "?code={0}");
+app.UseRouting();
+app.UseAntiforgery();
+
+app.MapStaticAssets();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+
+app.MapHub<DashboardHub>("/hub/dashboard");
 
 app.UseHttpsRedirection();
 

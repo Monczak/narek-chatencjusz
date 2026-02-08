@@ -1,0 +1,22 @@
+@switch (State)
+{
+    case VoiceSessionMachineState.Unstarted:
+        <MudChip T="string" Color="Color.Dark" Icon="@Icons.Material.Filled.DoDisturb">Unstarted</MudChip>
+        break;
+    case VoiceSessionMachineState.Idle:
+        <MudChip T="string" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">Idle</MudChip>
+        break;
+    case VoiceSessionMachineState.Ended:
+        <MudChip T="string" Color="Color.Dark" Icon="@Icons.Material.Filled.Stop">Ended</MudChip>
+        break;
+    case VoiceSessionMachineState.Unstable:
+        <MudChip T="string" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning">Unstable</MudChip>
+        break;
+    default:
+        <MudChip T="string" Color="Color.Default">@State</MudChip>
+        break;
+}
+
+@code {
+    [Parameter] public VoiceSessionMachineState State { get; set; }    
+}

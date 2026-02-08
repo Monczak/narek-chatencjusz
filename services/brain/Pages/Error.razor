@@ -1,0 +1,68 @@
+@page "/error"
+@implements IDisposable
+@inject PersistentComponentState ApplicationState
+@layout MainLayout
+
+<PageTitle>@Title</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex flex-column align-center justify-center mt-16">
+    <MudIcon Icon="@Icon" Size="Size.Large" Color="Color.Warning" Class="mb-4" Style="width: 100px; height: 100px;" />
+    <MudText Typo="Typo.h3" Align="Align.Center" GutterBottom="true">@_actualCode</MudText>
+    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-8">@Message</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/">Go to Dashboard</MudButton>
+</MudContainer>
+
+@code {
+    [CascadingParameter]
+    public HttpContext? HttpContext { get; set; }
+
+    private int _actualCode;
+    private PersistingComponentStateSubscription _subscription;
+
+    protected override void OnInitialized()
+    {
+        _subscription = ApplicationState.RegisterOnPersisting(PersistState);
+
+        if (ApplicationState.TryTakeFromJson<int>("statusCode", out var restoredCode))
+        {
+            _actualCode = restoredCode;
+        }
+        else if (HttpContext != null &&
+                 HttpContext.Request.Query.TryGetValue("code", out var codeVal) &&
+                 int.TryParse(codeVal, out var code))
+        {
+            _actualCode = code;
+        }
+        else
+        {
+            _actualCode = 404;
+        }
+    }
+
+    private Task PersistState()
+    {
+        ApplicationState.PersistAsJson("statusCode", _actualCode);
+        return Task.CompletedTask;
+    }
+
+    private string Title => $"Error {_actualCode}";
+
+    private string Message => _actualCode switch
+    {
+        401 => "Okay, DON'T PANIC! I can still stop it, not a problem. There's a password! I'll just hack it. Here we go.",
+        403 => "Come back when you're a little, mmm... richer.",
+        404 => "But nobody came.",
+        _ => "Well, that's awkward."
+    };
+
+    private string Icon => _actualCode switch
+    {
+        401 or 403 => Icons.Material.Filled.Security,
+        _ => Icons.Material.Filled.SentimentVeryDissatisfied
+    };
+
+    public void Dispose()
+    {
+        _subscription.Dispose();
+    }
+}

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using BrainService.Domain.Session;
+using BrainService.Hubs;
 using BrainService.Proto;
+using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
 using StackExchange.Redis;
 
@@ -11,10 +13,31 @@ public class VoiceSessionService(
     IDistributedLockFactory lockFactory, 
     ILogger<VoiceSessionService> logger,
     ILoggerFactory loggerFactory,
-    NodeRegistryService nodeRegistry
+    NodeRegistryService nodeRegistry,
+    IHubContext<DashboardHub> hubContext
 ) 
 {
     private readonly IDatabase _db = redis.GetDatabase();
+
+    public async Task<VoiceSessionState?> GetSessionStateAsync(string guildId)
+    {
+        var json = await _db.StringGetAsync($"session:{guildId}");
+        return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<VoiceSessionState>(json.ToString());
+    }
+
+    public async Task<List<VoiceSessionState>> GetSessionStatesAsync()
+    {
+        var server = redis.GetServer(redis.GetEndPoints().First());
+        var keys = server.Keys(pattern: $"session:*");
+
+        var tasks = keys.Select(async key =>
+        {
+            var json = await _db.StringGetAsync(key);
+            return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<VoiceSessionState>(json.ToString());
+        });
+        var results = await Task.WhenAll(tasks);
+        return results.Where(x => x != null).OrderByDescending(x => x.LastUpdated).ToList();
+    }
 
     public async Task HandleEventAsync(VoiceSessionEvent evt)
     {
@@ -123,6 +146,7 @@ public class VoiceSessionService(
             {
                 var newJson = JsonSerializer.Serialize(machine.State);
                 await _db.StringSetAsync(dataKey, newJson, TimeSpan.FromHours(24));
+                await hubContext.Clients.All.SendAsync("SessionUpdated", machine.State);
             }
         }
         catch (Exception ex)
