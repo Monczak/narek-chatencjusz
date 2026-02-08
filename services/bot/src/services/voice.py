@@ -83,11 +83,28 @@ class VoiceService:
                 logging.warning(f"Standard join failed ({e}) -- attempting hard reconnect")
                 try:
                     if guild.voice_client:
-                        await guild.voice_client.disconnect(force=True)
-                        await asyncio.sleep(0.5)
+                        # Try to disconnect first
+                        try:
+                            await guild.voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
+
+                        for _ in range(5):
+                            if guild.voice_client is None:
+                                break
+                            await asyncio.sleep(0.5)
+                        
+                        # Last ditch: if it's still there, we can't connect
+                        if guild.voice_client is not None:
+                            logging.error("Voice client is stuck (zombie state). Cannot reconnect.")
+                            raise RuntimeError("Voice client stuck in zombie state")
+                        
                     await channel_to_join.connect()
                 except Exception as e2:
                     logging.error(f"Hard reconnect failed: {e2}")
+                    self.state.consume_intent(guild_id)
+                    await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e2))
+                    return
 
             if not is_moving:
                 self.event_stream.push_session_state_update(guild_id, brain_pb2.SessionUpdate.ChangeType.STARTED)

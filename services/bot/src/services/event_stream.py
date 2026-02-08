@@ -70,12 +70,16 @@ class EventStreamService:
 
     async def _stream_loop(self):
         while not self._stop_event.is_set():
+            gen = self._event_generator()
+            stream_call = None
+            should_backoff = False
+            
             try:
                 logging.info("Opening voice event stream to Brain...")
                 if self.brain:
                     metadata = (("node_id", self.node_id), )
                     stream_call = self.brain.StreamVoiceSessionEvents(
-                        self._event_generator(), # type: ignore (BrainAsyncStub)
+                        gen, # type: ignore (BrainAsyncStub)
                         metadata=metadata
                     )
                     logging.info("Voice event stream opened")
@@ -84,5 +88,28 @@ class EventStreamService:
                 break
             except Exception as e:
                 logging.warning(f"Voice event stream disconnected: {e}. Retrying in 5 seconds...")
+                should_backoff = True
+            finally:
+                if stream_call:
+                    stream_call.cancel() # type: ignore (BrainAsyncStub)
+
+                try:
+                    await gen.aclose()
+                except RuntimeError:
+                    pass
+                
+                # Clean up zombie consumers
+                old_queue = self._queue
+                self._queue = asyncio.Queue()
+
+                while not old_queue.empty():
+                    try:
+                        self._queue.put_nowait(old_queue.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+
+                await asyncio.sleep(0.1)
+
+            if should_backoff and not self._stop_event.is_set():
                 await asyncio.sleep(5)
             
