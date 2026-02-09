@@ -1,4 +1,5 @@
 import asyncio
+import struct
 import uuid
 import os
 import logging
@@ -9,6 +10,10 @@ from containers import Container
 from bot import NarekChatencjuszBot
 
 logging.basicConfig(level=logging.INFO)
+
+# Monkey-patch advertised encryption modes - prevents a regression causing Opus decode errors
+# with audio from other users
+discord.voice_client.VoiceClient.supported_modes = ['xsalsa20_poly1305'] # type: ignore
 
 async def run_bot():
     with open(".version", "r") as version_file:

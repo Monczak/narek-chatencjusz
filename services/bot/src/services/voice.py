@@ -128,6 +128,7 @@ class VoiceService:
             self.state.consume_intent(guild_ctx.id)
             logging.error(f"Error handling execute_connect: {e}")
             await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
+            raise
     
     async def handle_unstable_disconnect(self, guild: discord.Guild):
         logging.warning(f"Panic: Unstable voice state detected in guild {guild.id}. disconnecting.")

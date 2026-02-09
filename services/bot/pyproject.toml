@@ -8,7 +8,7 @@ dependencies = [
     "dependency-injector>=4.48.3",
     "grpcio>=1.76.0",
     "grpcio-tools>=1.76.0",
-    "py-cord>=2.7.0",
+    "py-cord[voice]>=2.7.0",
     "pydantic-settings>=2.12.0",
     "pynacl>=1.6.2",
     "python-dotenv>=1.2.1",
@@ -22,3 +22,6 @@ dev = [
     "mypy-protobuf>=5.0.0",
     "types-protobuf>=6.32.1.20251210",
 ]
+
+[tool.uv.sources]
+py-cord = { git = "https://github.com/Pycord-Development/pycord" }

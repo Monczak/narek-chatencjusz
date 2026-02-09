@@ -117,7 +117,7 @@ dependencies = [
     { name = "dependency-injector" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
-    { name = "py-cord" },
+    { name = "py-cord", extra = ["voice"] },
     { name = "pydantic-settings" },
     { name = "pynacl" },
     { name = "python-dotenv" },
@@ -137,7 +137,7 @@ requires-dist = [
     { name = "dependency-injector", specifier = ">=4.48.3" },
     { name = "grpcio", specifier = ">=1.76.0" },
     { name = "grpcio-tools", specifier = ">=1.76.0" },
-    { name = "py-cord", specifier = ">=2.7.0" },
+    { name = "py-cord", extras = ["voice"], git = "https://github.com/Pycord-Development/pycord" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "pynacl", specifier = ">=1.6.2" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
@@ -887,15 +887,16 @@ wheels = [
 
 [[package]]
 name = "py-cord"
-version = "2.7.0"
-source = { registry = "https://pypi.org/simple" }
+version = "2.7.1.dev39+gbbbd1d262"
+source = { git = "https://github.com/Pycord-Development/pycord#bbbd1d262cfdfb35434a7de5e09cdac0f840e7e0" }
 dependencies = [
     { name = "aiohttp" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/13/faca034d886cf7ad504d44d797ed6823dbfbe05f3093ae9cd60bd08b93af/py_cord-2.7.0.tar.gz", hash = "sha256:6f947e6b08ae2884777a3fcb1150d7c0df14c4461e8015ed3d2f29c081e79dfd", size = 1128349, upload-time = "2025-12-24T16:00:02.935Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/d8/a4094151a7f942c2606c23e5c9cc5fa5f4aba2405e678f23c360f58c8f91/py_cord-2.7.0-py3-none-any.whl", hash = "sha256:7f5badc55f6cd80bac0e65e77a10a3aaac17bc7932c2088035dd925900a4c29e", size = 1204142, upload-time = "2025-12-24T16:00:01.224Z" },
+
+[package.optional-dependencies]
+voice = [
+    { name = "pynacl" },
 ]
 
 [[package]]

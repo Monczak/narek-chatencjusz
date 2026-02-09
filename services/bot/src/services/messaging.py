@@ -59,3 +59,4 @@ class CommandListener:
                     pass
         except Exception as e:
             logging.error(f"Failed to process command: {e}")
+            
