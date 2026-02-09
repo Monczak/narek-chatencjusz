@@ -13,6 +13,7 @@ dependencies = [
     "pynacl>=1.6.2",
     "python-dotenv>=1.2.1",
     "silero-vad>=6.2.0",
+    "torch>=2.10.0",
     "torchaudio>=2.10.0",
     "valkey>=6.1.1",
 ]
@@ -23,5 +24,11 @@ dev = [
     "types-protobuf>=6.32.1.20251210",
 ]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
-py-cord = { git = "https://github.com/Pycord-Development/pycord" }
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }

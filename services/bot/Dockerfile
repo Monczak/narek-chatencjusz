@@ -1,6 +1,9 @@
-FROM ghcr.io/astral-sh/uv:python3.13-alpine
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
-RUN apk add --no-cache bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libopus0 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
