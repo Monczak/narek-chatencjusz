@@ -56,9 +56,21 @@ else
                         </MudItem>
                         <MudItem xs="4">
                             <MudText Typo="Typo.h6">Connected Users (@(_session.Users.Count))</MudText>
-                            <MudText Typo="Typo.body1">
-                                @(_session.Users.Count > 0 ? string.Join(", ", _session.Users.Select(u => u.DisplayName)) : "No users connected")
-                            </MudText>
+                            <MudChipSet T="string">
+                                @foreach (var user in _session.Users)
+                                {
+                                    var isSpeaking = _session.SpeakingUsers.Contains(user.UserId);
+                                    <MudChip Color="@(isSpeaking ? Color.Success : Color.Default)"
+                                             Variant="@(isSpeaking ? Variant.Filled : Variant.Outlined)"
+                                             Icon="@(isSpeaking ? Icons.Material.Filled.Mic : Icons.Material.Filled.MicOff)">
+                                        @user.DisplayName
+                                    </MudChip>
+                                }
+                                @if (_session.Users.Count == 0)
+                                {
+                                    <MudText Typo="Typo.body2">No users connected</MudText>
+                                }
+                            </MudChipSet>
                         </MudItem>
                     </MudGrid>
                 </MudCardContent>

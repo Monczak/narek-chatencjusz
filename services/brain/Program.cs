@@ -1,6 +1,8 @@
 using BrainService;
 using BrainService.Hubs;
 using BrainService.Services;
+using BrainService.Services.Audio;
+using BrainService.Services.Configuration;
 using BrainService.Services.Session;
 using MudBlazor.Services;
 using RedLockNet;
@@ -17,12 +19,15 @@ builder.Services.AddSingleton<IDistributedLockFactory>(sp => RedLockFactory.Crea
 builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
 
+builder.Services.AddSingleton<BrainConfigService>();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 builder.Services.AddSingleton<CommandPublisher>();
+builder.Services.AddSingleton<UserSpeakingDetector>();
 builder.Services.AddSingleton<VoiceSessionService>();
 
 builder.Services.AddHostedService<StaleConnectionClearer>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UserSpeakingDetector>());
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

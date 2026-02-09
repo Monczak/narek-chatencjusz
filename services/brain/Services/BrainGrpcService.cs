@@ -1,4 +1,5 @@
 using BrainService.Proto;
+using BrainService.Services.Audio;
 using BrainService.Services.Session;
 using Grpc.Core;
 
@@ -9,6 +10,7 @@ public class BrainGrpcService(
     NodeRegistryService nodeRegistry,
     CommandPublisher publisher,
     VoiceSessionService voiceSessionService,
+    UserSpeakingDetector speakingDetector,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -191,7 +193,8 @@ public class BrainGrpcService(
             await foreach (var frame in requestStream.ReadAllAsync(cts.Token))
             {
                 // TODO: Forward frames to the mixer
-                logger.LogInformation("[AudioStream] {Timestamp} - User {UserId} speaking ({Prob:F1}%)", frame.Timestamp, frame.UserId, frame.SpeechProbability * 100);
+                speakingDetector.ProcessFrame(frame);
+                // logger.LogInformation("[AudioStream] {Timestamp} - User {UserId} speaking ({Prob:F1}%)", frame.Timestamp, frame.UserId, frame.SpeechProbability * 100);
             }
         }
         catch (OperationCanceledException)

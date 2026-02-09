@@ -24,8 +24,12 @@ class NarekChatencjuszBot(discord.Bot):
         event_stream: EventStreamService,
         audio_stream: AudioStreamService
     ):
+        intents = discord.Intents.default()
+        intents.members = True
+
         super().__init__(
-            debug_guilds=debug_guild_ids
+            debug_guilds=debug_guild_ids,
+            intents=intents
         )
 
         self.node_id = node_id

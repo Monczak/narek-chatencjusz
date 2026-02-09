@@ -1,0 +1,50 @@
+@page "/settings"
+@using System.Text.Json
+@using BrainService.Domain.Configuration
+@using BrainService.Services.Configuration
+@inject BrainConfigService ConfigService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Settings</MudText>
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h5">Voice Activity Detection (VAD)</MudText>
+        </CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSlider @bind-Value="_config.Vad.StartThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Success">Start Threshold: @_config.Vad.StartThreshold</MudSlider>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSlider @bind-Value="_config.Vad.StopThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Error">Stop Threshold: @_config.Vad.StopThreshold</MudSlider>
+            </MudItem>
+            <MudItem xs="12">
+                <MudNumericField @bind-Value="_config.Vad.SilenceDurationMs" Label="Silence Duration (ms)" Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+    <MudCardActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(async () => await Save())">Save Configuration</MudButton>
+    </MudCardActions>
+</MudCard>
+
+@code {
+    private BrainConfig _config = new();
+
+    protected override void OnInitialized()
+    {
+        // Clone to avoid editing the singleton directly before saving
+        var current = ConfigService.Current;
+        _config = JsonSerializer.Deserialize<BrainConfig>(
+            JsonSerializer.Serialize(current)) ?? new BrainConfig();
+    }
+
+    private async Task Save()
+    {
+        await ConfigService.UpdateConfigAsync(_config);
+        Snackbar.Add("Configuration saved and propagated.", Severity.Success);
+    }
+}

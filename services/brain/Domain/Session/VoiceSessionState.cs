@@ -11,5 +11,6 @@ public class VoiceSessionState
     public string? NodeId { get; set; }
     public VoiceSessionMachineState MachineState { get; set; } = VoiceSessionMachineState.Unstarted;
     public HashSet<User> Users { get; init; } = []; // Has to have init to be deserialized properly
+    public HashSet<ulong> SpeakingUsers { get; init; } = [];
     public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
 }

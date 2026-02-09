@@ -74,6 +74,7 @@ public class VoiceSessionService(
                 if (state.ChannelId.HasValue && !registryChannelId.HasValue)
                 {
                     state.ChannelId = registryChannelId;
+                    state.ChannelName = null;
                 }
 
                 return state;
@@ -105,6 +106,7 @@ public class VoiceSessionService(
 
     public async Task UpdateSessionChannelAsync(GuildContext guild, ChannelContext channel)
     {
+        logger.LogInformation("Updating session channel for Guild {GuildId} - {Channel}", guild.Id, channel);
         await ExecuteSessionTransactionAsync(guild,
             loadedState =>
             {
@@ -114,6 +116,15 @@ public class VoiceSessionService(
             },
             machine => machine.UpdateChannel(channel),
             TimeSpan.FromSeconds(2)
+        );
+    }
+
+    public async Task UpdateUserSpeakingStatusAsync(ulong guildId, ulong userId, bool isSpeaking)
+    {
+        await ExecuteSessionTransactionAsync(new GuildContext { Id = guildId },
+            Task.FromResult,
+            machine => machine.UpdateUserSpeaking(userId, isSpeaking),
+            TimeSpan.FromSeconds(1)
         );
     }
 

@@ -1,5 +1,6 @@
 import asyncio
 from typing import Dict
+import discord
 from discord.sinks import Sink, Filters
 
 from services.audio_stream import AudioStreamService
@@ -8,10 +9,11 @@ from services.vad import VADService, VADState
 CHUNK_SIZE = 3840 # 20 ms of stereo audio at 48kHz
 
 class GrpcVadAudioSink(Sink):
-    def __init__(self, audio_service: AudioStreamService, vad_service: VADService):
+    def __init__(self, guild: discord.Guild, audio_service: AudioStreamService, vad_service: VADService):
         super().__init__()
         self.audio = audio_service
         self.vad = vad_service
+        self.guild = guild
 
         self._user_vad_states: Dict[int, VADState] = {}
 
@@ -26,7 +28,7 @@ class GrpcVadAudioSink(Sink):
 
         state = self._user_vad_states[user]
         speech_prob = self.vad.process_audio(data, state)
-        self.audio.push_audio(user, data, speech_prob)
+        self.audio.push_audio(self.guild.id, user, data, speech_prob)
 
     def cleanup(self):
         self._user_vad_states.clear()

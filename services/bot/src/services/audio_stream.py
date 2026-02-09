@@ -2,8 +2,9 @@ from generated import brain_pb2
 from services.stream import BaseStreamService
 
 class AudioStreamService(BaseStreamService[brain_pb2.UserAudioFrame]):
-    def push_audio(self, user_id: int, pcm_data: bytes, speech_prob: float):        
+    def push_audio(self, guild_id: int, user_id: int, pcm_data: bytes, speech_prob: float):        
         frame = brain_pb2.UserAudioFrame(
+            guild_id=guild_id,
             user_id=user_id,
             pcm_data=pcm_data,
             timestamp=self._get_time(),

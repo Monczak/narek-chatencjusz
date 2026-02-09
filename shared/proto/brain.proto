@@ -168,10 +168,11 @@ message BrainCommand {
 // --- Audio Stuff ---
 
 message UserAudioFrame {
-  uint64 user_id = 1;
-  bytes pcm_data = 2;
-  int64 timestamp = 3;
-  float speech_probability = 4;
+  uint64 guild_id = 1;
+  uint64 user_id = 2;
+  bytes pcm_data = 3;
+  int64 timestamp = 4;
+  float speech_probability = 5;
 }
 
 message AudioFrame {

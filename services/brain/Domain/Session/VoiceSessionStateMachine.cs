@@ -73,9 +73,6 @@ public class VoiceSessionStateMachine
             case VoiceSessionEvent.EventDataOneofCase.UserState:
                 HandleUserStateUpdate(evt.UserState);
                 break;
-            case VoiceSessionEvent.EventDataOneofCase.UserSpeaking:
-                HandleUserSpeakingUpdate(evt.UserSpeaking);
-                break;
             case VoiceSessionEvent.EventDataOneofCase.ChannelStateSnapshot:
                 HandleChannelStateSnapshot(evt.ChannelStateSnapshot);
                 break;
@@ -92,6 +89,25 @@ public class VoiceSessionStateMachine
         }
     }
     
+    public void UpdateUserSpeaking(ulong userId, bool isSpeaking)
+    {
+        bool changed;
+        if (isSpeaking)
+        {
+            changed = State.SpeakingUsers.Add(userId);
+        }
+        else
+        {
+            changed = State.SpeakingUsers.Remove(userId);
+        }
+
+        if (changed)
+        {
+            State.LastUpdated = DateTime.UtcNow;
+            IsDirty = true;
+        }
+    }
+    
     public void HandleNodeDisconnected()
     {
         Fire(VoiceSessionMachineTrigger.NodeDisconnected);
@@ -100,11 +116,6 @@ public class VoiceSessionStateMachine
     public void Recover()
     {
         Fire(VoiceSessionMachineTrigger.NodeReconnected);
-    }
-
-    private void HandleUserSpeakingUpdate(UserSpeakingUpdate update)
-    {
-        // TODO: Keep track of speaking users once VAD is implemented
     }
 
     private void HandleUserStateUpdate(UserVoiceStateUpdate update)

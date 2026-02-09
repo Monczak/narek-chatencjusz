@@ -122,7 +122,7 @@ class VoiceService:
             if guild.voice_client:
                 if not guild.voice_client.recording:
                     guild.voice_client.start_recording(
-                        GrpcVadAudioSink(self.audio_stream, self.vad),
+                        GrpcVadAudioSink(guild, self.audio_stream, self.vad),
                         self._recording_finished_callback
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")
