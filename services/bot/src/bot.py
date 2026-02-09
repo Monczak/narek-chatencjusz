@@ -4,6 +4,7 @@ import logging
 
 from valkey import Valkey
 
+from services.audio import AudioStreamService
 from services.event_stream import EventStreamService
 from services.messaging import CommandListener
 from services.voice import VoiceService
@@ -20,7 +21,8 @@ class NarekChatencjuszBot(discord.Bot):
         debug_guild_ids: List[int],
         voice_service: VoiceService,
         command_listener: CommandListener,
-        event_stream: EventStreamService
+        event_stream: EventStreamService,
+        audio_stream: AudioStreamService
     ):
         super().__init__(
             debug_guilds=debug_guild_ids
@@ -37,6 +39,7 @@ class NarekChatencjuszBot(discord.Bot):
         self.voice_service = voice_service
         self.command_listener = command_listener
         self.event_stream = event_stream
+        self.audio_stream = audio_stream
 
     async def setup_cogs(self):
         logging.info("Loading cogs...")
@@ -57,6 +60,9 @@ class NarekChatencjuszBot(discord.Bot):
         await self.event_stream.start()
         logging.info("EventStreamService started")
 
+        await self.audio_stream.start()
+        logging.info("AudioStreamService started")
+
         logging.info(f"Narek Chatencjusz bot service is up and running")
 
     async def close(self):
@@ -64,6 +70,9 @@ class NarekChatencjuszBot(discord.Bot):
 
         if self.event_stream:
             await self.event_stream.stop()
+
+        if self.audio_stream:
+            await self.audio_stream.stop()
 
         try:
             if self.voice_clients:

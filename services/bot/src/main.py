@@ -3,6 +3,8 @@ import uuid
 import os
 import logging
 
+import discord.opus
+
 from containers import Container
 from bot import NarekChatencjuszBot
 
@@ -16,6 +18,8 @@ async def run_bot():
 
     logging.info(f"Starting Narek Chatencjusz bot service - version {version}")
     logging.info(f"Node ID: {node_id}")
+
+    discord.opus._load_default()
 
     container = Container()
 

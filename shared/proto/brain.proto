@@ -15,6 +15,9 @@ service Brain {
   // Voice session state and events
   rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAck);
   rpc StreamVoiceSessionEvents (stream VoiceSessionEvent) returns (VoiceSessionEventAck);
+
+  // Audio stream
+  rpc StreamAudio (stream UserAudioFrame) returns (stream AudioFrame);
 }
 
 message GuildContext {
@@ -164,3 +167,13 @@ message BrainCommand {
 
 // --- Audio Stuff ---
 
+message UserAudioFrame {
+  uint64 user_id = 1;
+  bytes pcm_data = 2;
+  int64 timestamp = 3;
+  float speech_probability = 4;
+}
+
+message AudioFrame {
+  bytes pcm_data = 1;
+}

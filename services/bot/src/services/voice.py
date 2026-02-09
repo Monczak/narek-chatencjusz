@@ -3,6 +3,9 @@ import discord
 import logging
 from typing import Optional, Tuple
 from generated import brain_pb2, brain_pb2_grpc
+from services.audio import AudioStreamService
+from services.vad import VADService
+from services.network_sink import GrpcVadAudioSink
 from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
@@ -15,15 +18,25 @@ class VoiceService:
         response_service: ResponseService,
         interaction_service: InteractionService,
         event_stream: EventStreamService,
-        state_service: StateService
+        state_service: StateService,
+        audio_stream: AudioStreamService,
+        vad_service: VADService
     ) -> None:
         self.brain = brain_stub
         self.response = response_service
         self.interaction = interaction_service
         self.event_stream = event_stream
         self.state = state_service
+        self.audio_stream = audio_stream
+        self.vad = vad_service
 
         self.bot: discord.Bot | None = None # Injected later
+
+        try:
+            self.vad.load_model()
+        except Exception as e:
+            logging.error(f"Failed to preload Silero VAD: {e}")
+            raise
 
     def set_bot(self, bot: discord.Bot):
         self.bot = bot
@@ -106,6 +119,14 @@ class VoiceService:
                     await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e2))
                     return
 
+            if guild.voice_client:
+                if not guild.voice_client.recording:
+                    guild.voice_client.start_recording(
+                        GrpcVadAudioSink(self.audio_stream, self.vad),
+                        self._recording_finished_callback
+                    )
+                    logging.info(f"Started recording in Channel {channel_to_join.id}")
+
             if not is_moving:
                 self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
             else:
@@ -142,6 +163,8 @@ class VoiceService:
                 raise ValueError(f"Guild {guild_ctx.id} does not exist")
             
             if guild.voice_client:
+                if guild.voice_client.recording:
+                    guild.voice_client.stop_recording()
                 await guild.voice_client.disconnect()
 
             self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.ENDED, None)
@@ -156,4 +179,7 @@ class VoiceService:
         except Exception:
             self.state.consume_intent(guild_ctx.id)
             raise
+
+    async def _recording_finished_callback(self, sink, *args):
+        logging.info("Recording finished")
 

@@ -8,6 +8,8 @@ from bot import NarekChatencjuszBot
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
+from services.audio import AudioStreamService
+from services.vad import VADService
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
@@ -71,13 +73,25 @@ class Container(containers.DeclarativeContainer):
         interaction_service=interaction_service
     )
 
+    vad_service = providers.Singleton(
+        VADService
+    )
+
+    audio_stream_service = providers.Singleton(
+        AudioStreamService,
+        brain_stub_factory=brain_stub.provider,
+        node_id=node_id
+    )
+
     voice_service = providers.Singleton(
         VoiceService,
         brain_stub=brain_stub,
         response_service=response_service,
         interaction_service=interaction_service,
         event_stream=event_stream_service,
-        state_service=state_service
+        state_service=state_service,
+        audio_stream=audio_stream_service,
+        vad_service=vad_service
     )
 
     util_cog = providers.Factory(
@@ -117,5 +131,6 @@ class Container(containers.DeclarativeContainer):
         voice_cog_factory = voice_cog.provider,
         voice_service = voice_service,
         command_listener = command_listener,
-        event_stream=event_stream_service
+        event_stream=event_stream_service,
+        audio_stream=audio_stream_service,
     )

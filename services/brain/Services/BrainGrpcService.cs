@@ -175,4 +175,36 @@ public class BrainGrpcService(
         
         return new VoiceSessionEventAck { Success = true };
     }
+
+    public override async Task StreamAudio(IAsyncStreamReader<UserAudioFrame> requestStream, IServerStreamWriter<AudioFrame> responseStream, ServerCallContext context)
+    {
+        var nodeId = context.RequestHeaders.GetValue("node_id");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken, 
+            applicationLifetime.ApplicationStopping
+        );
+        
+        logger.LogInformation("Accepted audio stream from Node {NodeId}", nodeId);
+
+        try
+        {
+            await foreach (var frame in requestStream.ReadAllAsync(cts.Token))
+            {
+                // TODO: Forward frames to the mixer
+                logger.LogInformation("[AudioStream] {Timestamp} - User {UserId} speaking ({Prob:F1}%)", frame.Timestamp, frame.UserId, frame.SpeechProbability * 100);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Audio stream from Node {NodeId} canceled", nodeId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error reading audio stream from Node {NodeId}", nodeId);
+        }
+        finally
+        {
+            logger.LogInformation("Audio stream from Node {NodeId} finished", nodeId);
+        }
+    }
 }
