@@ -31,8 +31,8 @@ class VoiceService:
     async def request_join(self, guild: discord.Guild, channel: discord.VoiceChannel, node_id: str, correlation_id: str) -> Tuple[bool, str]:
         try:
             req = brain_pb2.JoinChannelRequest(
-                guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name),
-                channel=brain_pb2.ChannelContext(id=str(channel.id), name=channel.name),
+                guild=brain_pb2.GuildContext(id=guild.id, name=guild.name),
+                channel=brain_pb2.ChannelContext(id=channel.id, name=channel.name),
                 node_id=node_id,
                 correlation_id=correlation_id
             )
@@ -45,7 +45,7 @@ class VoiceService:
     async def request_leave(self, guild: discord.Guild, node_id: str, correlation_id: str) -> bool:
         try:
             req = brain_pb2.LeaveChannelRequest(
-                guild=brain_pb2.GuildContext(id=str(guild.id), name=guild.name), 
+                guild=brain_pb2.GuildContext(id=guild.id, name=guild.name), 
                 node_id=node_id,
                 correlation_id=correlation_id
             )

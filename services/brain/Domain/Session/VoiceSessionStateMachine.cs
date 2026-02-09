@@ -86,7 +86,6 @@ public class VoiceSessionStateMachine
     {
         if (State.ChannelId != channel.Id)
         {
-            _logger.LogInformation("UpdateChannel: {Channel}", channel);
             State.ChannelId = channel.Id;
             State.ChannelName = channel.Name;
             IsDirty = true;

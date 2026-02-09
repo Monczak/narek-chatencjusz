@@ -1,4 +1,4 @@
-@page "/session/{GuildId}"
+@page "/session/{GuildIdParam}"
 @using BrainService.Proto
 @using Microsoft.AspNetCore.SignalR.Client
 @inject VoiceSessionService SessionService
@@ -101,12 +101,13 @@ else
 }
 
 @code {
-    [Parameter] public required string GuildId { get; set; }
+    [Parameter] public required string GuildIdParam { get; set; }
     
     private VoiceSessionState? _session;
     private HubConnection? _hubConnection;
     private bool _isLoading = true;
     private bool _isBusy;
+    private ulong GuildId => ulong.Parse(GuildIdParam);
 
     protected override async Task OnInitializedAsync()
     {

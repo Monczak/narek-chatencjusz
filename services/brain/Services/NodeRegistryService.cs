@@ -11,16 +11,16 @@ public class NodeRegistryService(
     ILogger<NodeRegistryService> logger)
 {
     private readonly IDatabase _db = redis.GetDatabase();
-    public async Task<string?> GetNodeForGuildAsync(string guildId)
+    public async Task<string?> GetNodeForGuildAsync(ulong guildId)
     {
         var nodeId = await _db.StringGetAsync($"guild:{guildId}:connection");
         return nodeId.IsNullOrEmpty ? null : nodeId.ToString();
     }
 
-    public async Task<string?> GetChannelForGuildAsync(string guildId)
+    public async Task<ulong?> GetChannelForGuildAsync(ulong guildId)
     {
         var channel = await _db.StringGetAsync($"guild:{guildId}:channel");
-        return channel.IsNullOrEmpty ? null : channel.ToString();
+        return channel.IsNullOrEmpty ? null : ulong.Parse(channel.ToString());
     }
 
     public async Task<string?> GetNodeAddressAsync(string nodeId)

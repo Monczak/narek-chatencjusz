@@ -4,9 +4,9 @@ namespace BrainService.Domain.Session;
 
 public class VoiceSessionState
 {
-    public required string GuildId { get; init; }
+    public required ulong GuildId { get; init; }
     public required string GuildName { get; init; }
-    public string? ChannelId { get; set; }
+    public ulong? ChannelId { get; set; }
     public string? ChannelName { get; set; }
     public string? NodeId { get; set; }
     public VoiceSessionMachineState MachineState { get; set; } = VoiceSessionMachineState.Unstarted;

@@ -1,3 +1,3 @@
 namespace BrainService.Domain.Discord;
 
-public record User(string UserId, string DisplayName);
+public record User(ulong UserId, string DisplayName);

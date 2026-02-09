@@ -18,17 +18,17 @@ service Brain {
 }
 
 message GuildContext {
-  string id = 1;
+  uint64 id = 1;
   string name = 2;
 }
 
 message ChannelContext {
-  string id = 1;
+  uint64 id = 1;
   string name = 2;
 }
 
 message UserContext {
-  string id = 1;
+  uint64 id = 1;
   string display_name = 2;
 }
 
@@ -161,4 +161,6 @@ message BrainCommand {
     ErrorMessage error = 3;
   }
 }
+
+// --- Audio Stuff ---
 

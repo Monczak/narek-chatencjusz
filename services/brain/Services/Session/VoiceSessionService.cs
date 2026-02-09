@@ -19,7 +19,7 @@ public class VoiceSessionService(
 {
     private readonly IDatabase _db = redis.GetDatabase();
 
-    public async Task<VoiceSessionState?> GetSessionStateAsync(string guildId)
+    public async Task<VoiceSessionState?> GetSessionStateAsync(ulong guildId)
     {
         var json = await _db.StringGetAsync($"session:{guildId}");
         return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<VoiceSessionState>(json.ToString());
@@ -71,7 +71,7 @@ public class VoiceSessionService(
                 }
                 
                 var state = loadedState ?? new VoiceSessionState { GuildId = evt.Guild.Id, GuildName = evt.Guild.Name };
-                if (string.IsNullOrEmpty(state.ChannelId) && !string.IsNullOrEmpty(registryChannelId))
+                if (state.ChannelId.HasValue && !registryChannelId.HasValue)
                 {
                     state.ChannelId = registryChannelId;
                 }
