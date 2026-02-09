@@ -1,9 +1,9 @@
 import asyncio
 import discord
 import logging
-from typing import Optional, Tuple
+from typing import Tuple
 from generated import brain_pb2, brain_pb2_grpc
-from services.audio import AudioStreamService
+from services.audio_stream import AudioStreamService
 from services.vad import VADService
 from services.network_sink import GrpcVadAudioSink
 from services.state import StateService, VoiceTransitionType

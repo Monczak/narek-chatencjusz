@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict
 from discord.sinks import Sink, Filters
 
-from services.audio import AudioStreamService
+from services.audio_stream import AudioStreamService
 from services.vad import VADService, VADState
 
 CHUNK_SIZE = 3840 # 20 ms of stereo audio at 48kHz

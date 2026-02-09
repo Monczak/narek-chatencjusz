@@ -8,7 +8,7 @@ from bot import NarekChatencjuszBot
 from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
-from services.audio import AudioStreamService
+from services.audio_stream import AudioStreamService
 from services.vad import VADService
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService

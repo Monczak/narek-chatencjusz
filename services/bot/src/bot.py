@@ -4,7 +4,7 @@ import logging
 
 from valkey import Valkey
 
-from services.audio import AudioStreamService
+from services.audio_stream import AudioStreamService
 from services.event_stream import EventStreamService
 from services.messaging import CommandListener
 from services.voice import VoiceService
