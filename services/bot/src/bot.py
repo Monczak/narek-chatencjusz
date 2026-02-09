@@ -76,7 +76,8 @@ class NarekChatencjuszBot(discord.Bot):
 
         try:
             if self.voice_clients:
-                for vc in self.voice_clients:
+                for vp in self.voice_clients:
+                    vc: discord.VoiceClient = vp # type: ignore
                     try:
                         guild_id = vc.guild.id # type: ignore
                         logging.info(f"Disconnecting from guild {guild_id}")
@@ -84,7 +85,11 @@ class NarekChatencjuszBot(discord.Bot):
                         self.valkey.delete(f"guild:{guild_id}:connection")
                         self.valkey.delete(f"guild:{guild_id}:channel")
 
-                        await vc.disconnect(force=True)
+                        if vc.recording:
+                            vc.stop_recording()
+                        
+                        if vc.is_connected():
+                            await vc.disconnect(force=True)
                     except Exception as e:
                         logging.error(f"Error disconnecting from guild {vc.guild.id}: {e}") # type: ignore
             
