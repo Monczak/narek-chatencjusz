@@ -85,39 +85,20 @@ class VoiceService:
                 logging.warning(f"Channel {channel_ctx.id} is invalid")
                 return
             
-            is_moving = guild.voice_client is not None and guild.voice_client.is_connected()
-
-            try:
-                if is_moving:
-                    await guild.voice_client.move_to(channel_to_join) # type: ignore (Pylance doesn't understand logic)
-                else:
-                    await channel_to_join.connect()
-            except Exception as e:
-                logging.warning(f"Standard join failed ({e}) -- attempting hard reconnect")
+            # Working around a Pycord limitation that doesn't ensure proper voice client connection state
+            # after the bot is moved to another channel
+            # Always force a disconnect before reconnecting if we're already connected to a voice channel 
+            if guild.voice_client:
                 try:
-                    if guild.voice_client:
-                        # Try to disconnect first
-                        try:
-                            await guild.voice_client.disconnect(force=True)
-                        except Exception:
-                            pass
+                    if guild.voice_client.recording:
+                        guild.voice_client.stop_recording()
+                    await guild.voice_client.disconnect(force=True)
+                except Exception as e:
+                    logging.warning(f"Error disconnecting before reconnect: {e}")
 
-                        for _ in range(5):
-                            if guild.voice_client is None:
-                                break
-                            await asyncio.sleep(0.5)
-                        
-                        # Last ditch: if it's still there, we can't connect
-                        if guild.voice_client is not None:
-                            logging.error("Voice client is stuck (zombie state). Cannot reconnect.")
-                            raise RuntimeError("Voice client stuck in zombie state")
-                        
-                    await channel_to_join.connect()
-                except Exception as e2:
-                    logging.error(f"Hard reconnect failed: {e2}")
-                    self.state.consume_intent(guild_ctx.id)
-                    await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e2))
-                    return
+            await asyncio.sleep(0.5)
+
+            await channel_to_join.connect()
 
             if guild.voice_client:
                 if not guild.voice_client.recording:
@@ -127,10 +108,7 @@ class VoiceService:
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")
 
-            if not is_moving:
-                self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
-            else:
-                self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.MOVED, channel_to_join)
+            self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
 
             self.event_stream.push_channel_snapshot(
                 guild=guild,
@@ -151,6 +129,40 @@ class VoiceService:
             logging.error(f"Error handling execute_connect: {e}")
             await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
     
+    async def handle_unstable_disconnect(self, guild: discord.Guild):
+        logging.warning(f"Panic: Unstable voice state detected in guild {guild.id}. disconnecting.")
+        
+        # Register a DISCONNECT intent so StateManager doesn't freak out when we leave
+        self.state.register_intent(guild.id, VoiceTransitionType.DISCONNECT)
+
+        # Aggressively kill the Discord connection
+        if guild.voice_client:
+            try:
+                # Suppress "Not recording" errors
+                if guild.voice_client.recording: # type: ignore
+                    guild.voice_client.stop_recording() # type: ignore
+            except Exception:
+                pass
+            
+            try:
+                await guild.voice_client.disconnect(force=True)
+            except Exception as e:
+                logging.warning(f"Error checking out during unstable disconnect: {e}")
+
+        self.event_stream.push_session_state_update(
+            guild, 
+            brain_pb2.SessionUpdate.ChangeType.UNSTABLE, 
+            None 
+        )
+
+        await self.state.notify_state_change(
+            guild=guild,
+            channel=None,
+            reason=brain_pb2.VoiceStateReason.MANUAL_DISCONNECT
+        )
+        
+        self.state.consume_intent(guild.id)
+
     async def execute_disconnect(self, guild_ctx: brain_pb2.GuildContext, correlation_id: str | None):
         if not self.bot:
             raise RuntimeError("Bot not set")
@@ -165,7 +177,7 @@ class VoiceService:
             if guild.voice_client:
                 if guild.voice_client.recording:
                     guild.voice_client.stop_recording()
-                await guild.voice_client.disconnect()
+                await guild.voice_client.disconnect(force=True)
 
             self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.ENDED, None)
 

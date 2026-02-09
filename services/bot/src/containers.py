@@ -102,7 +102,8 @@ class Container(containers.DeclarativeContainer):
     state_cog = providers.Factory(
         StateManager,
         state_service=state_service,
-        event_stream=event_stream_service
+        event_stream=event_stream_service,
+        voice_service=voice_service
     )
 
     voice_cog = providers.Factory(

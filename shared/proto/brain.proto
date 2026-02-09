@@ -124,6 +124,7 @@ message SessionUpdate {
     STARTED = 1;
     ENDED = 2;
     MOVED = 3;
+    UNSTABLE = 4;
   }
   ChangeType change_type = 1;
   ChannelContext channel = 2;

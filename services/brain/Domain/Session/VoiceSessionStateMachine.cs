@@ -38,6 +38,7 @@ public class VoiceSessionStateMachine
         _stateMachine.Configure(VoiceSessionMachineState.Idle)
             .Permit(VoiceSessionMachineTrigger.SessionEnded, VoiceSessionMachineState.Ended)
             .Permit(VoiceSessionMachineTrigger.NodeDisconnected,  VoiceSessionMachineState.Unstable)
+            .Permit(VoiceSessionMachineTrigger.SessionUnstable,  VoiceSessionMachineState.Unstable)
             .Ignore(VoiceSessionMachineTrigger.SessionStarted);
 
         _stateMachine.Configure(VoiceSessionMachineState.Ended)
@@ -45,7 +46,6 @@ public class VoiceSessionStateMachine
         
         _stateMachine.Configure(VoiceSessionMachineState.Unstable)
             .Permit(VoiceSessionMachineTrigger.NodeReconnected, VoiceSessionMachineState.Idle)
-            .Permit(VoiceSessionMachineTrigger.SessionEnded, VoiceSessionMachineState.Ended)
             .Ignore(VoiceSessionMachineTrigger.NodeDisconnected);
         
         _stateMachine.OnTransitioned(t =>
@@ -137,6 +137,9 @@ public class VoiceSessionStateMachine
         {
             case SessionUpdate.Types.ChangeType.Started:
                 Fire(VoiceSessionMachineTrigger.SessionStarted);
+                break;
+            case SessionUpdate.Types.ChangeType.Unstable:
+                Fire(VoiceSessionMachineTrigger.SessionUnstable);
                 break;
             case SessionUpdate.Types.ChangeType.Ended:
                 Fire(VoiceSessionMachineTrigger.SessionEnded);

@@ -5,14 +5,16 @@ import discord
 from discord.ext import commands, tasks
 
 from generated import brain_pb2
+from services.voice import VoiceService
 from services.event_stream import EventStreamService
 from services.state import StateService, VoiceTransitionType
 
 class StateManager(commands.Cog):
-    def __init__(self, bot: discord.Bot, state_service: StateService, event_stream: EventStreamService):
+    def __init__(self, bot: discord.Bot, state_service: StateService, event_stream: EventStreamService, voice_service: VoiceService):
         self.bot = bot
         self.state = state_service
         self.event_stream = event_stream
+        self.voice = voice_service
         self.ip_address = socket.gethostbyname(socket.gethostname())
 
         self.heartbeat.start()
@@ -33,7 +35,7 @@ class StateManager(commands.Cog):
         connected_guilds = {vc.guild: vc for vc in self.bot.voice_clients if vc.is_connected()} # type: ignore
 
         for guild, vc in connected_guilds.items():
-            gid = str(guild.id)
+            gid = guild.id
             channel: discord.VoiceChannel = vc.channel # type: ignore
 
             registered_node = self.state.get_registered_node(gid)
@@ -78,7 +80,7 @@ class StateManager(commands.Cog):
             return
         
         guild = member.guild
-        gid = str(guild.id)
+        gid = guild.id
         intent = self.state.get_intent(gid)
 
         # --- Disconnection ---
@@ -119,7 +121,7 @@ class StateManager(commands.Cog):
         
         # --- Moving or joining ---
         if after.channel is not None:
-            current_channel_id = str(after.channel.id)
+            current_channel_id = after.channel.id
             
             # Did we intend to go here?
             if intent and intent.type == VoiceTransitionType.CONNECT:
@@ -139,13 +141,8 @@ class StateManager(commands.Cog):
                 return # Ignore spurious move event
 
             # We are somewhere else - might have been moved manually
-            logging.info(f"Detected move to new channel {after.channel.id} -- reconciling state")
-            self._push_existing_channel_users(guild, after.channel) # type: ignore
-            await self.state.notify_state_change(
-                guild=guild,
-                channel=after.channel, # type: ignore
-                reason=brain_pb2.VoiceStateReason.MANUAL_MOVE
-            )
+            logging.info(f"Detected move to new channel {after.channel.id} -- flagging session as unstable and disconnecting")
+            asyncio.create_task(self.voice.handle_unstable_disconnect(guild)) # type: ignore
 
     async def _handle_user_voice_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if not member.guild.voice_client or not member.guild.voice_client.channel:

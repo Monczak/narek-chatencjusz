@@ -81,7 +81,8 @@ public class VoiceSessionService(
             },
             machine =>
             {
-                if (machine.State.MachineState == VoiceSessionMachineState.Unstable)
+                if (machine.State.MachineState == VoiceSessionMachineState.Unstable 
+                    && evt.SessionUpdate?.ChangeType == SessionUpdate.Types.ChangeType.Started)
                 {
                     machine.Recover();
                 }
