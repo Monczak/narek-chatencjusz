@@ -177,5 +177,6 @@ message UserAudioFrame {
 }
 
 message AudioFrame {
-  bytes pcm_data = 1;
+  uint64 guild_id = 1;
+  bytes pcm_data = 2;
 }
