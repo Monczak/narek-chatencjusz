@@ -49,6 +49,12 @@ class VoiceService:
                 node_id=node_id,
                 correlation_id=correlation_id
             )
+
+            # If we have a session remembered for this guild (from a state mismatch?), try resuming it
+            session_id = self.state.get_session_id(guild.id)
+            if session_id:
+                req.session_id = session_id
+
             res = await self.brain.JoinChannel(req) # type: ignore (BrainAsyncStub)
             
             if res.success and res.session_id:
@@ -177,7 +183,6 @@ class VoiceService:
         )
         
         self.state.consume_intent(guild.id)
-        self.state.clear_session_id(guild.id)
 
     async def execute_disconnect(self, guild_ctx: brain_pb2.GuildContext, correlation_id: str | None, session_id: str | None = None):
         if not self.bot:

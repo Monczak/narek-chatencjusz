@@ -66,9 +66,7 @@ public class VoiceSessionService(
             return;
         }
 
-        await ExecuteSessionTransactionAsync(
-            evt.Guild,
-            sessionId,
+        await ExecuteSessionTransactionAsync(sessionId,
             async loadedState =>
             {
                 var registryChannelId = await nodeRegistry.GetChannelForGuildAsync(evt.Guild.Id);
@@ -80,8 +78,8 @@ public class VoiceSessionService(
                     var channelId = eventChannel?.Id ?? registryChannelId;
                     var channelName = eventChannel?.Name;
                     
-                    if (loadedState is { MachineState: VoiceSessionMachineState.Unstable } &&
-                        loadedState.ChannelId == channelId)
+                    logger.LogInformation("{State}", loadedState?.MachineState);
+                    if (loadedState is { MachineState: VoiceSessionMachineState.Unstable })
                     {
                         logger.LogInformation("Resuming unstable session {SessionId} for Guild {GuildId} in Channel {ChannelId}", 
                             loadedState.SessionId, evt.Guild.Id, channelId);
@@ -138,7 +136,7 @@ public class VoiceSessionService(
             return;
         }
 
-        await ExecuteSessionTransactionAsync(guild, sessionId,
+        await ExecuteSessionTransactionAsync(sessionId,
             loadedState =>
             {
                 if (loadedState == null || loadedState.MachineState == VoiceSessionMachineState.Ended)
@@ -160,7 +158,7 @@ public class VoiceSessionService(
         }
 
         logger.LogInformation("Updating session {SessionId} channel for Guild {GuildId} - {Channel}", sessionId, guild.Id, channel);
-        await ExecuteSessionTransactionAsync(guild, sessionId,
+        await ExecuteSessionTransactionAsync(sessionId,
             loadedState =>
             {
                 if (loadedState == null || loadedState.MachineState == VoiceSessionMachineState.Ended)
@@ -177,7 +175,7 @@ public class VoiceSessionService(
         sessionId = await ResolveSessionIdAsync(guildId, sessionId);
         if (sessionId == null) return;
 
-        await ExecuteSessionTransactionAsync(new GuildContext { Id = guildId }, sessionId,
+        await ExecuteSessionTransactionAsync(sessionId,
             Task.FromResult,
             machine => machine.UpdateUserSpeaking(userId, isSpeaking),
             TimeSpan.FromSeconds(1)
@@ -185,7 +183,6 @@ public class VoiceSessionService(
     }
     
     private async Task ExecuteSessionTransactionAsync(
-        GuildContext guild,
         string? sessionId,
         Func<VoiceSessionState?, Task<VoiceSessionState?>> stateResolver,
         Action<VoiceSessionStateMachine> stateProcessAction,
@@ -228,6 +225,11 @@ public class VoiceSessionService(
                 var newJson = JsonSerializer.Serialize(machine.State);
                 await _db.StringSetAsync(dataKey, newJson, TimeSpan.FromHours(24));
                 await hubContext.Clients.All.SendAsync("SessionUpdated", machine.State);
+                
+                if (machine.State.MachineState == VoiceSessionMachineState.Ended)
+                {
+                    await nodeRegistry.ClearLatestSessionForGuildAsync(machine.State.GuildId);
+                }
             }
         }
         catch (Exception ex)

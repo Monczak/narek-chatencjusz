@@ -58,6 +58,7 @@ message JoinChannelRequest {
   ChannelContext channel = 2;
   string node_id = 3;
   optional string correlation_id = 4;
+  optional string session_id = 5;
 }
 
 message JoinChannelResponse {
@@ -145,14 +146,14 @@ message VoiceSessionEventAck {
 // --- Event-Driven Messages ---
 
 message ConnectVoice {
-  optional string session_id = 1;
+  string session_id = 1;
   GuildContext guild = 2;
   ChannelContext channel = 3;
   optional string correlation_id = 4;
 }
 
 message DisconnectVoice {
-  optional string session_id = 1;
+  string session_id = 1;
   GuildContext guild = 2;
   optional string correlation_id = 3;
 }
@@ -174,7 +175,7 @@ message BrainCommand {
 // --- Audio Stuff ---
 
 message UserAudioFrame {
-  optional string session_id = 1;
+  string session_id = 1;
   uint64 guild_id = 2;
   uint64 user_id = 3;
   bytes pcm_data = 4;

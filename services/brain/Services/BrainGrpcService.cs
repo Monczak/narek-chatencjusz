@@ -32,6 +32,10 @@ public class BrainGrpcService(
         var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
         var currentChannelId = await nodeRegistry.GetChannelForGuildAsync(request.Guild.Id);
         var currentSessionId = await nodeRegistry.GetSessionForGuildAsync(request.Guild.Id);
+        
+        var requestedOrLatestSession = !string.IsNullOrEmpty(request.SessionId)
+            ? request.SessionId
+            : await nodeRegistry.GetLatestSessionForGuildAsync(request.Guild.Id);
 
         var hasOwner = !string.IsNullOrEmpty(currentOwner);
         var sameGuild = currentOwner == request.NodeId;
@@ -56,7 +60,7 @@ public class BrainGrpcService(
                 };
             
             case (true, true, false) or (false, _, _):
-                var sessionId = currentSessionId ?? Guid.NewGuid().ToString();
+                var sessionId = currentSessionId ?? requestedOrLatestSession ?? Guid.NewGuid().ToString();
                 logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId} with Session {SessionId}", 
                     request.NodeId, request.Guild.Id, sessionId);
 

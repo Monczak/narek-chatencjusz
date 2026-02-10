@@ -29,6 +29,22 @@ public class NodeRegistryService(
         return sessionId.IsNullOrEmpty ? null : sessionId.ToString();
     }
 
+    public async Task<string?> GetLatestSessionForGuildAsync(ulong guildId)
+    {
+        var sessionId = await _db.StringGetAsync($"guild:{guildId}:latest_session");
+        return sessionId.IsNullOrEmpty ? null : sessionId.ToString();
+    }
+
+    public async Task SetLatestSessionForGuildAsync(ulong guildId, string sessionId)
+    {
+        await _db.StringSetAsync($"guild:{guildId}:latest_session", sessionId, TimeSpan.FromHours(24));
+    }
+
+    public async Task ClearLatestSessionForGuildAsync(ulong guildId)
+    {
+        await _db.KeyDeleteAsync($"guild:{guildId}:latest_session");
+    }
+
     public async Task<string?> GetNodeAddressAsync(string nodeId)
     {
         var heartbeatJson = await _db.StringGetAsync($"node:{nodeId}:heartbeat");
