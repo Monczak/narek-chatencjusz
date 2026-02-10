@@ -10,7 +10,7 @@ public class UserSpeakingDetector(
     VoiceSessionService sessionService,
     ILogger<UserSpeakingDetector> logger) : BackgroundService
 {
-    private readonly ConcurrentDictionary<(ulong GuildId, ulong UserId), UserVadState> _states = new();
+    private readonly ConcurrentDictionary<(string? SessionId, ulong GuildId, ulong UserId), UserVadState> _states = new();
 
     private class UserVadState
     {
@@ -18,13 +18,13 @@ public class UserSpeakingDetector(
         public DateTime LastFrameReceived { get; set; }
         public DateTime LastSpeakingFrame { get; set; }
     }
-
-    public bool ProcessFrame(UserAudioFrame frame)
+    
+    public bool ProcessFrame(UserAudioFrame frame, string? sessionId = null)
     {
         var config = configService.Current.Vad;
-        var key = (frame.GuildId, frame.UserId);
+        var key = (sessionId, frame.GuildId, frame.UserId);
         
-        var state =  _states.GetOrAdd(key, k => new UserVadState());
+        var state = _states.GetOrAdd(key, k => new UserVadState());
         state.LastFrameReceived = DateTime.UtcNow;
         
         var frameIndicatesSpeech = frame.SpeechProbability >= config.StartThreshold;
@@ -32,7 +32,7 @@ public class UserSpeakingDetector(
         {
             state.IsSpeaking = true;
             state.LastSpeakingFrame = DateTime.UtcNow;
-            _ = UpdateSessionStateAsync(frame.GuildId, frame.UserId, true);
+            _ = UpdateSessionStateAsync(sessionId, frame.GuildId, frame.UserId, true);
         }
         else if (state.IsSpeaking)
         {
@@ -59,7 +59,7 @@ public class UserSpeakingDetector(
                 if (state.IsSpeaking && now - state.LastSpeakingFrame > silenceDuration)
                 {
                     state.IsSpeaking = false;
-                    _ = UpdateSessionStateAsync(key.GuildId, key.UserId, false);
+                    _ = UpdateSessionStateAsync(key.SessionId, key.GuildId, key.UserId, false);
 
                     if (now - state.LastFrameReceived > TimeSpan.FromMinutes(5))
                     {
@@ -70,6 +70,6 @@ public class UserSpeakingDetector(
         }
     }
     
-    private async Task UpdateSessionStateAsync(ulong guildId, ulong userId, bool isSpeaking) 
-        => await sessionService.UpdateUserSpeakingStatusAsync(guildId, userId, isSpeaking);
+    private async Task UpdateSessionStateAsync(string? sessionId, ulong guildId, ulong userId, bool isSpeaking) 
+        => await sessionService.UpdateUserSpeakingStatusAsync(sessionId, guildId, userId, isSpeaking);
 }

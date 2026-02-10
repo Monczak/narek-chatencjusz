@@ -2,8 +2,16 @@ from typing import List
 import discord
 from generated import brain_pb2
 from services.stream import BaseStreamService
+from services.state import StateService
 
 class EventStreamService(BaseStreamService[brain_pb2.VoiceSessionEvent]):
+    def __init__(self, brain_stub_factory, node_id: str, state_service: StateService):
+        super().__init__(brain_stub_factory, node_id)
+        self.state = state_service
+
+    def _get_session_id(self, guild_id: int) -> str | None:
+        return self.state.get_session_id(guild_id)
+
     def push_user_state_update(self, guild: discord.Guild, user: discord.Member | discord.User, channel: discord.VoiceChannel, change_type):
         event = brain_pb2.VoiceSessionEvent(
             guild=brain_pb2.GuildContext(id=guild.id, name=guild.name),
@@ -15,6 +23,10 @@ class EventStreamService(BaseStreamService[brain_pb2.VoiceSessionEvent]):
                 change_type=change_type
             )
         )
+        session_id = self._get_session_id(guild.id)
+        if session_id:
+            event.session_id = session_id
+        
         self._enqueue(event)
 
     def push_session_state_update(self, guild: discord.Guild, change_type, channel: discord.VoiceChannel | None):
@@ -30,6 +42,10 @@ class EventStreamService(BaseStreamService[brain_pb2.VoiceSessionEvent]):
             timestamp=self._get_time(),
             session_update=update
         )
+        session_id = self._get_session_id(guild.id)
+        if session_id:
+            event.session_id = session_id
+        
         self._enqueue(event)
 
     def push_channel_snapshot(self, guild: discord.Guild, channel: discord.VoiceChannel, members: List[discord.Member]):
@@ -47,6 +63,10 @@ class EventStreamService(BaseStreamService[brain_pb2.VoiceSessionEvent]):
                 users=snapshot_users
             )
         )
+        session_id = self._get_session_id(guild.id)
+        if session_id:
+            event.session_id = session_id
+        
         self._enqueue(event)
 
     async def _create_stream_call(self, generator, metadata):
@@ -54,4 +74,3 @@ class EventStreamService(BaseStreamService[brain_pb2.VoiceSessionEvent]):
 
     async def _process_stream(self, stream_call):
         await stream_call
-            

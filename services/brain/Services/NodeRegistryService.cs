@@ -22,6 +22,12 @@ public class NodeRegistryService(
         var channel = await _db.StringGetAsync($"guild:{guildId}:channel");
         return channel.IsNullOrEmpty ? null : ulong.Parse(channel.ToString());
     }
+    
+    public async Task<string?> GetSessionForGuildAsync(ulong guildId)
+    {
+        var sessionId = await _db.StringGetAsync($"guild:{guildId}:session");
+        return sessionId.IsNullOrEmpty ? null : sessionId.ToString();
+    }
 
     public async Task<string?> GetNodeAddressAsync(string nodeId)
     {
@@ -41,7 +47,7 @@ public class NodeRegistryService(
         return null;
     }
 
-    public async Task RegisterGuildConnectionAsync(GuildContext guild, string nodeId, ChannelContext channel)
+    public async Task RegisterGuildConnectionAsync(GuildContext guild, string nodeId, ChannelContext channel, string sessionId)
     {
         await using var redLock = await lockFactory.CreateLockAsync($"lock:guild:{guild.Id}", TimeSpan.FromSeconds(5));
         if (!redLock.IsAcquired)
@@ -52,12 +58,14 @@ public class NodeRegistryService(
         
         await _db.StringSetAsync($"guild:{guild.Id}:connection", nodeId);
         await _db.StringSetAsync($"guild:{guild.Id}:channel", channel.Id);
+        await _db.StringSetAsync($"guild:{guild.Id}:session", sessionId);
     }
 
     public async Task UnregisterGuildConnectionAsync(GuildContext guild)
     {
         await _db.KeyDeleteAsync($"guild:{guild.Id}:connection");
         await _db.KeyDeleteAsync($"guild:{guild.Id}:channel");
+        await _db.KeyDeleteAsync($"guild:{guild.Id}:session");
     }
 
     public async Task CleanupStaleConnectionsAsync()

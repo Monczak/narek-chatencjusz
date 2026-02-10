@@ -20,11 +20,12 @@ else
         @foreach (var session in _sessions)
         {
             <MudItem xs="12">
-                <MudCard Class="h-100 cursor-pointer" @onclick="() => ViewSessionDetails(session.GuildId)">
+                <MudCard Class="h-100 cursor-pointer" @onclick="() => ViewSessionDetails(session.SessionId)">
                     <MudCardHeader>
                         <CardHeaderContent>
                             <MudText Typo="Typo.h6">@session.GuildName (@(session.GuildId))</MudText>
                             <MudText Typo="Typo.subtitle1">Channel: @session.ChannelName (@(session.ChannelId))</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Session: @session.SessionId</MudText>
                         </CardHeaderContent>
                         <CardHeaderActions>
                             <SessionBadge State="@session.MachineState"></SessionBadge>
@@ -70,8 +71,8 @@ else
         InvokeAsync(() =>
         {
             if (_sessions == null) return;
-
-            var existing = _sessions.FirstOrDefault(s => s.GuildId == session.GuildId);
+            
+            var existing = _sessions.FirstOrDefault(s => s.SessionId == session.SessionId);
             if (existing != null)
             {
                 var index = _sessions.IndexOf(existing);
@@ -86,10 +87,10 @@ else
             StateHasChanged();
         });
     }
-
-    private void ViewSessionDetails(ulong guildId)
+    
+    private void ViewSessionDetails(string sessionId)
     {
-        Nav.NavigateTo($"/session/{guildId}");
+        Nav.NavigateTo($"/session/{sessionId}");
     }
 
     private string GetDuration(VoiceSessionState session)

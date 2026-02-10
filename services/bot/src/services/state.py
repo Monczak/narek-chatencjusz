@@ -17,6 +17,7 @@ class VoiceTransitionType(Enum):
 class VoiceTransition:
     type: VoiceTransitionType
     target_channel_id: int | None
+    session_id: str | None
     timestamp: float
     expiration: float
 
@@ -27,6 +28,7 @@ class StateService:
         self.node_id = node_id
 
         self._active_transitions: Dict[int, VoiceTransition] = {}
+        self._session_ids: Dict[int, str] = {}
 
     def _get_node_heartbeat_key(self):
         return f"node:{self.node_id}:heartbeat"
@@ -36,6 +38,18 @@ class StateService:
     
     def _get_guild_channel_key(self, guild_id: int):
         return f"guild:{guild_id}:channel"
+    
+    def get_session_id(self, guild_id: int) -> str | None:
+        return self._session_ids.get(guild_id)
+    
+    def set_session_id(self, guild_id: int, session_id: str):
+        self._session_ids[guild_id] = session_id
+        logging.info(f"Stored session ID {session_id} for guild {guild_id}")
+    
+    def clear_session_id(self, guild_id: int):
+        if guild_id in self._session_ids:
+            del self._session_ids[guild_id]
+            logging.info(f"Cleared session ID for guild {guild_id}")
     
     def report_heartbeat(self, ip_address: str, load: int):
         data = {"ip": ip_address, "load": load}
@@ -52,11 +66,14 @@ class StateService:
     
     async def notify_state_change(self, guild: discord.Guild, channel: discord.VoiceChannel | None, reason):
         try:
+            session_id = self.get_session_id(guild.id)
             req = brain_pb2.VoiceStateNotification(
                 guild=brain_pb2.GuildContext(id=guild.id, name=guild.name),
                 node_id=self.node_id,
                 reason=reason
             )
+            if session_id:
+                req.session_id = session_id
             if channel:
                 req.channel.CopyFrom(brain_pb2.ChannelContext(id=channel.id, name=channel.name))
             
@@ -64,11 +81,12 @@ class StateService:
         except Exception as e:
             logging.error(f"Failed to notify Brain of state change: {e}")
 
-    def register_intent(self, guild_id: int, transition_type: VoiceTransitionType, target_channel_id: int | None = None, ttl: float = 10.0):
+    def register_intent(self, guild_id: int, transition_type: VoiceTransitionType, target_channel_id: int | None = None, session_id: str | None = None, ttl: float = 10.0):
         now = time.time()
         self._active_transitions[guild_id] = VoiceTransition(
             type=transition_type,
             target_channel_id=target_channel_id,
+            session_id=session_id,
             timestamp=now,
             expiration=now + ttl
         )

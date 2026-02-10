@@ -50,6 +50,11 @@ class VoiceService:
                 correlation_id=correlation_id
             )
             res = await self.brain.JoinChannel(req) # type: ignore (BrainAsyncStub)
+            
+            if res.success and res.session_id:
+                self.state.set_session_id(guild.id, res.session_id)
+                logging.info(f"Received session ID {res.session_id} from Brain for guild {guild.id}")
+            
             return res.success, res.message
         except Exception as e:
             logging.error(f"Brain voice join error: {e}")
@@ -68,11 +73,19 @@ class VoiceService:
             logging.error(f"Brain voice leave error: {e}")
             raise
 
-    async def execute_connect(self, guild_ctx: brain_pb2.GuildContext, channel_ctx: brain_pb2.ChannelContext, correlation_id: str):
+    async def execute_connect(self, guild_ctx: brain_pb2.GuildContext, channel_ctx: brain_pb2.ChannelContext, correlation_id: str, session_id: str | None = None):
         if not self.bot:
             raise RuntimeError("Bot not set")
         
-        self.state.register_intent(guild_ctx.id, VoiceTransitionType.CONNECT, channel_ctx.id)
+        if session_id:
+            self.state.set_session_id(guild_ctx.id, session_id)
+        
+        self.state.register_intent(
+            guild_ctx.id, 
+            VoiceTransitionType.CONNECT, 
+            channel_ctx.id,
+            session_id=session_id
+        )
 
         try:
             guild = self.bot.get_guild(int(guild_ctx.id))
@@ -103,7 +116,7 @@ class VoiceService:
             if guild.voice_client:
                 if not guild.voice_client.recording:
                     guild.voice_client.start_recording(
-                        GrpcVadAudioSink(guild, self.audio_stream, self.vad),
+                        GrpcVadAudioSink(guild, self.audio_stream, self.vad, self.state),
                         self._recording_finished_callback
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")
@@ -126,6 +139,7 @@ class VoiceService:
         
         except Exception as e:
             self.state.consume_intent(guild_ctx.id)
+            self.state.clear_session_id(guild_ctx.id)
             logging.error(f"Error handling execute_connect: {e}")
             await self.response.complete(correlation_id, success=False, title="Connection failed", description=str(e))
             raise
@@ -163,8 +177,9 @@ class VoiceService:
         )
         
         self.state.consume_intent(guild.id)
+        self.state.clear_session_id(guild.id)
 
-    async def execute_disconnect(self, guild_ctx: brain_pb2.GuildContext, correlation_id: str | None):
+    async def execute_disconnect(self, guild_ctx: brain_pb2.GuildContext, correlation_id: str | None, session_id: str | None = None):
         if not self.bot:
             raise RuntimeError("Bot not set")
         
@@ -188,6 +203,8 @@ class VoiceService:
                 reason=brain_pb2.VoiceStateReason.DISCONNECT,
             )
 
+            self.state.clear_session_id(guild.id)
+
             await self.response.complete(correlation_id, success=True, title="Disconnected", description=f"Left the voice channel")
         except Exception:
             self.state.consume_intent(guild_ctx.id)
@@ -195,4 +212,3 @@ class VoiceService:
 
     async def _recording_finished_callback(self, sink, *args):
         logging.info("Recording finished")
-

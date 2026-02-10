@@ -63,6 +63,7 @@ message JoinChannelRequest {
 message JoinChannelResponse {
   bool success = 1;
   string message = 2;
+  string session_id = 3;
 }
 
 message LeaveChannelRequest {
@@ -76,10 +77,11 @@ message LeaveChannelResponse {
 }
 
 message VoiceStateNotification {  
-  GuildContext guild = 1;
-  optional ChannelContext channel = 2;
-  string node_id = 3;
-  VoiceStateReason reason = 4;
+  optional string session_id = 1;
+  GuildContext guild = 2;
+  optional ChannelContext channel = 3;
+  string node_id = 4;
+  VoiceStateReason reason = 5;
 }
 
 message VoiceStateAck {
@@ -89,15 +91,16 @@ message VoiceStateAck {
 // --- Event Streaming ---
 
 message VoiceSessionEvent {
-  GuildContext guild = 1;
-  string node_id = 2;
-  int64 timestamp = 3;
+  optional string session_id = 1;
+  GuildContext guild = 2;
+  string node_id = 3;
+  int64 timestamp = 4;
 
   oneof event_data {
-    UserVoiceStateUpdate user_state = 4;
-    UserSpeakingUpdate user_speaking = 5;
-    SessionUpdate session_update = 6;
-    ChannelStateSnapshot channel_state_snapshot = 7;
+    UserVoiceStateUpdate user_state = 5;
+    UserSpeakingUpdate user_speaking = 6;
+    SessionUpdate session_update = 7;
+    ChannelStateSnapshot channel_state_snapshot = 8;
   }
 }
 
@@ -142,14 +145,16 @@ message VoiceSessionEventAck {
 // --- Event-Driven Messages ---
 
 message ConnectVoice {
-  GuildContext guild = 1;
-  ChannelContext channel = 2;
-  optional string correlation_id = 3;
+  optional string session_id = 1;
+  GuildContext guild = 2;
+  ChannelContext channel = 3;
+  optional string correlation_id = 4;
 }
 
 message DisconnectVoice {
-  GuildContext guild = 1;
-  optional string correlation_id = 2;
+  optional string session_id = 1;
+  GuildContext guild = 2;
+  optional string correlation_id = 3;
 }
 
 message ErrorMessage {
@@ -169,11 +174,12 @@ message BrainCommand {
 // --- Audio Stuff ---
 
 message UserAudioFrame {
-  uint64 guild_id = 1;
-  uint64 user_id = 2;
-  bytes pcm_data = 3;
-  int64 timestamp = 4;
-  float speech_probability = 5;
+  optional string session_id = 1;
+  uint64 guild_id = 2;
+  uint64 user_id = 3;
+  bytes pcm_data = 4;
+  int64 timestamp = 5;
+  float speech_probability = 6;
 }
 
 message AudioFrame {

@@ -31,20 +31,34 @@ public class BrainGrpcService(
 
         var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
         var currentChannelId = await nodeRegistry.GetChannelForGuildAsync(request.Guild.Id);
+        var currentSessionId = await nodeRegistry.GetSessionForGuildAsync(request.Guild.Id);
 
         var hasOwner = !string.IsNullOrEmpty(currentOwner);
         var sameGuild = currentOwner == request.NodeId;
         var sameChannel = currentChannelId == request.Channel.Id;
+        
         switch (hasOwner, sameGuild, sameChannel)
         {
             case (true, true, true):
-                return new JoinChannelResponse { Success = false, Message = "Already connected" };
+                return new JoinChannelResponse 
+                { 
+                    Success = false, 
+                    Message = "Already connected",
+                    SessionId = currentSessionId ?? string.Empty
+                };
             
             case (true, false, _):
-                return new JoinChannelResponse { Success = false, Message = $"Guild is already handled by node {currentOwner}" };
+                return new JoinChannelResponse 
+                { 
+                    Success = false, 
+                    Message = $"Guild is already handled by node {currentOwner}",
+                    SessionId = string.Empty
+                };
             
             case (true, true, false) or (false, _, _):
-                logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId}", request.NodeId, request.Guild.Id);
+                var sessionId = currentSessionId ?? Guid.NewGuid().ToString();
+                logger.LogInformation("Approved join for Node {NodeId} in Guild {GuildId} with Session {SessionId}", 
+                    request.NodeId, request.Guild.Id, sessionId);
 
                 var cmd = new BrainCommand
                 {
@@ -52,6 +66,7 @@ public class BrainGrpcService(
                     {
                         Guild = request.Guild,
                         Channel = request.Channel,
+                        SessionId = sessionId,
                         CorrelationId = request.CorrelationId
                     }
                 };
@@ -61,6 +76,7 @@ public class BrainGrpcService(
                 {
                     Success = true,
                     Message = "Connection approved",
+                    SessionId = sessionId
                 };
         }
     }
@@ -69,11 +85,13 @@ public class BrainGrpcService(
         ServerCallContext context)
     {
         var currentOwner = await nodeRegistry.GetNodeForGuildAsync(request.Guild.Id);
+        var currentSessionId = await nodeRegistry.GetSessionForGuildAsync(request.Guild.Id);
         var isOwner = currentOwner == request.NodeId;
 
         if (isOwner)
         {
-            logger.LogInformation("Node {NodeId} leaving Guild {GuildId}", request.NodeId, request.Guild);
+            logger.LogInformation("Node {NodeId} leaving Guild {GuildId} Session {SessionId}", 
+                request.NodeId, request.Guild.Id, currentSessionId);
         }
 
         if (isOwner || !string.IsNullOrEmpty(request.CorrelationId))
@@ -82,7 +100,8 @@ public class BrainGrpcService(
             {
                 Disconnect = new DisconnectVoice
                 {
-                    Guild = request.Guild, 
+                    Guild = request.Guild,
+                    SessionId = currentSessionId,
                     CorrelationId = request.CorrelationId,
                 }
             };
@@ -106,11 +125,19 @@ public class BrainGrpcService(
 
         if (isConnectedState && request.Channel != null)
         {
-            logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed connection in Guild {Guild} Channel {Channel}", 
-                request.Reason, request.NodeId, request.Guild, request.Channel);
+            var sessionId = request.SessionId;
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                sessionId = await nodeRegistry.GetSessionForGuildAsync(request.Guild.Id) ?? Guid.NewGuid().ToString();
+                logger.LogInformation("Generated new session ID {SessionId} for untracked connection in Guild {GuildId}", 
+                    sessionId, request.Guild.Id);
+            }
+
+            logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed connection in Guild {Guild} Channel {Channel} Session {SessionId}", 
+                request.Reason, request.NodeId, request.Guild, request.Channel, sessionId);
             
-            await nodeRegistry.RegisterGuildConnectionAsync(request.Guild, request.NodeId, request.Channel);
-            await voiceSessionService.UpdateSessionChannelAsync(request.Guild, request.Channel);
+            await nodeRegistry.RegisterGuildConnectionAsync(request.Guild, request.NodeId, request.Channel, sessionId);
+            await voiceSessionService.UpdateSessionChannelAsync(request.Guild, request.Channel, sessionId);
         }
         else if (isDisconnectedState)
         {
@@ -119,8 +146,9 @@ public class BrainGrpcService(
             
             if (isOwner)
             {
-                logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed disconnection from Guild {Guild}", 
-                    request.Reason, request.NodeId, request.Guild);
+                var sessionId = request.SessionId ?? await nodeRegistry.GetSessionForGuildAsync(request.Guild.Id);
+                logger.LogInformation("State sync ({Reason}): Node {NodeId} confirmed disconnection from Guild {Guild} Session {SessionId}", 
+                    request.Reason, request.NodeId, request.Guild, sessionId);
                 await nodeRegistry.UnregisterGuildConnectionAsync(request.Guild);
             }
         }
@@ -181,20 +209,25 @@ public class BrainGrpcService(
     public override async Task StreamAudio(IAsyncStreamReader<UserAudioFrame> requestStream, IServerStreamWriter<AudioFrame> responseStream, ServerCallContext context)
     {
         var nodeId = context.RequestHeaders.GetValue("node_id");
+        var sessionId = context.RequestHeaders.GetValue("session_id");
+        
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, 
             applicationLifetime.ApplicationStopping
         );
         
-        logger.LogInformation("Accepted audio stream from Node {NodeId}", nodeId);
+        logger.LogInformation("Accepted audio stream from Node {NodeId} for Session {SessionId}", nodeId, sessionId ?? "unspecified");
 
         try
         {
             await foreach (var frame in requestStream.ReadAllAsync(cts.Token))
             {
+                var effectiveSessionId = sessionId ?? frame.SessionId;
+                
                 // TODO: Forward frames to the mixer
-                speakingDetector.ProcessFrame(frame);
-                logger.LogInformation("[AudioStream] {Timestamp} - User {UserId} speaking ({Prob:F1}%)", frame.Timestamp, frame.UserId, frame.SpeechProbability * 100);
+                speakingDetector.ProcessFrame(frame, effectiveSessionId);
+                logger.LogDebug("[AudioStream] Session {SessionId} - User {UserId} speaking ({Prob:F1}%)", 
+                    effectiveSessionId, frame.UserId, frame.SpeechProbability * 100);
             }
         }
         catch (OperationCanceledException)

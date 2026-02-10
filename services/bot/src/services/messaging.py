@@ -48,15 +48,16 @@ class CommandListener:
                     await self.voice.execute_connect(
                         guild_ctx=cmd.connect.guild,
                         channel_ctx=cmd.connect.channel,
-                        correlation_id=cmd.connect.correlation_id
+                        correlation_id=cmd.connect.correlation_id,
+                        session_id=cmd.connect.session_id if cmd.connect.HasField("session_id") else None
                     )
                 case "disconnect":
                     await self.voice.execute_disconnect(
                         cmd.disconnect.guild,
-                        cmd.disconnect.correlation_id
+                        cmd.disconnect.correlation_id,
+                        session_id=cmd.disconnect.session_id if cmd.disconnect.HasField("session_id") else None
                     )
                 case "error":
                     pass
         except Exception as e:
             logging.error(f"Failed to process command: {e}")
-            

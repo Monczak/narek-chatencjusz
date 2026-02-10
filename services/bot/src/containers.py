@@ -46,17 +46,18 @@ class Container(containers.DeclarativeContainer):
         decode_responses=False
     )
 
-    event_stream_service = providers.Singleton(
-        EventStreamService,
-        brain_stub_factory=brain_stub.provider,
-        node_id=node_id
-    )
-
     state_service = providers.Singleton(
         StateService,
         valkey=valkey_client,
         brain_stub=brain_stub,
         node_id=node_id,
+    )
+
+    event_stream_service = providers.Singleton(
+        EventStreamService,
+        brain_stub_factory=brain_stub.provider,
+        node_id=node_id,
+        state_service=state_service
     )
 
     util_service = providers.Factory(
