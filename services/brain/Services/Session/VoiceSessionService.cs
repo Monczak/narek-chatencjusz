@@ -52,7 +52,7 @@ public class VoiceSessionService(
             return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<VoiceSessionState>(json.ToString());
         });
         var results = await Task.WhenAll(tasks);
-        return results.Where(x => x != null).OrderByDescending(x => x.LastUpdated).ToList();
+        return results.OfType<VoiceSessionState>().OrderByDescending(x => x.LastUpdated).ToList();
     }
 
     public async Task HandleEventAsync(VoiceSessionEvent evt)

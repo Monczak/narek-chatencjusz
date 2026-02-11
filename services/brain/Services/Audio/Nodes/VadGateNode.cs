@@ -1,5 +1,5 @@
-using System.Buffers;
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices; // Required for CollectionsMarshal
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using BrainService.Services.Configuration;
@@ -75,8 +75,8 @@ public class VadGateNode : IAudioNode
                 {
                     var session = _vadModelService.CreateSession();
                     var vadNode = new SileroVadNode(session);
-                    var buffer = new List<float>(VadWindowSize * 2); // Pre-allocate
-                    userVadData = (vadNode, buffer);
+                    var newBuffer = new List<float>(VadWindowSize * 2);
+                    userVadData = (vadNode, newBuffer);
                     _userVadNodes[frame.UserId] = userVadData;
                     _logger.LogDebug("Created VAD node for user {UserId}", frame.UserId);
                 }
@@ -85,69 +85,50 @@ public class VadGateNode : IAudioNode
                 var state = _userStates.GetOrAdd(frame.UserId, _ => new UserVadState());
                 state.LastFrameReceived = DateTime.UtcNow;
                 
-                // Input is already 16kHz mono from resampler
-                var samples = frame.Samples.Span;
+                buffer.AddRange(frame.Samples.Span);
                 
-                // Add to buffer
-                foreach (var sample in samples)
-                {
-                    buffer.Add(sample);
-                }
-                
-                // Process in 512-sample chunks
                 var config = _configService.Current.Vad;
                 
                 while (buffer.Count >= VadWindowSize)
                 {
-                    var chunk = ArrayPool<float>.Shared.Rent(VadWindowSize);
-                    try
+                    // Zero-allocation slicing using CollectionsMarshal
+                    var chunkSpan = CollectionsMarshal.AsSpan(buffer)[..VadWindowSize];
+                    
+                    var speechProb = vad.GetSpeechProbability(chunkSpan);
+                    
+                    buffer.RemoveRange(0, VadWindowSize);
+                    
+                    var frameIndicatesSpeech = speechProb >= config.StartThreshold;
+                    
+                    switch (state.IsSpeaking)
                     {
-                        for (var i = 0; i < VadWindowSize; i++)
-                        {
-                            chunk[i] = buffer[i];
-                        }
+                        case false when frameIndicatesSpeech:
+                            state.IsSpeaking = true;
+                            state.LastSpeakingFrame = DateTime.UtcNow;
                         
-                        buffer.RemoveRange(0, VadWindowSize);
-                        
-                        var speechProb = vad.GetSpeechProbability(chunk.AsSpan(0, VadWindowSize));
-                        
-                        var frameIndicatesSpeech = speechProb >= config.StartThreshold;
-                        
-                        switch (state.IsSpeaking)
-                        {
-                            case false when frameIndicatesSpeech:
-                                // Transition to speaking
-                                state.IsSpeaking = true;
-                                state.LastSpeakingFrame = DateTime.UtcNow;
-                            
-                                _ = Task.Run(async () =>
-                                {
-                                    try
-                                    {
-                                        await _sessionService.UpdateUserSpeakingStatusAsync(_sessionId, _guildId, frame.UserId, true);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Error updating speaking status for user {UserId}", frame.UserId);
-                                    }
-                                }, ct);
-                            
-                                _logger.LogDebug("User {UserId} started speaking (prob: {Prob:F2})", frame.UserId, speechProb);
-                                break;
-                            case true:
+                            _ = Task.Run(async () =>
                             {
-                                if (speechProb > config.StopThreshold)
+                                try
                                 {
-                                    state.LastSpeakingFrame = DateTime.UtcNow;
+                                    await _sessionService.UpdateUserSpeakingStatusAsync(_sessionId, _guildId, frame.UserId, true);
                                 }
-
-                                break;
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Error updating speaking status for user {UserId}", frame.UserId);
+                                }
+                            }, ct);
+                        
+                            _logger.LogDebug("User {UserId} started speaking (prob: {Prob:F2})", frame.UserId, speechProb);
+                            break;
+                        case true:
+                        {
+                            if (speechProb > config.StopThreshold)
+                            {
+                                state.LastSpeakingFrame = DateTime.UtcNow;
                             }
+
+                            break;
                         }
-                    }
-                    finally
-                    {
-                        ArrayPool<float>.Shared.Return(chunk);
                     }
                 }
                 

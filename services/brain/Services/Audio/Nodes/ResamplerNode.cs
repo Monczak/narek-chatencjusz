@@ -54,9 +54,9 @@ public class ResamplerNode : IAudioNode
                 
                 try
                 {
-                    // Resample
-                    _resampler.ResamplePrepare(inSamples.Length, 1, out int outSamples);
-                    _resampler.ResampleOut(outBuffer, inSamples, inSamples.Length, outSamples, 1);
+                    var inputCount = _resampler.ResamplePrepare(inSamples.Length, 1, out var inBuffer, out var inBufferOffset);
+                    Array.Copy(inSamples, 0, inBuffer, inBufferOffset, inputCount);
+                    var outSamples = _resampler.ResampleOut(outBuffer, 0, inputCount, outLength, 1);
                     
                     var resampledFrame = frame with { Samples = outBuffer.AsMemory(0, outSamples) };
                     

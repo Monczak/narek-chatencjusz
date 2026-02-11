@@ -7,9 +7,9 @@ public class SileroVadNode : IDisposable
 {
     private readonly InferenceSession _session;
     
-    // Silero VAD state - shape [2, 1, 128]
-    private float[][][] _state;
-    private float[][] _context;
+    // Silero VAD state - flattened shape [2, 1, 128] -> 256 items.
+    private float[] _state = null!;
+    private float[][] _context = null!;
     private int _lastSr;
     private int _lastBatchSize;
     
@@ -27,16 +27,11 @@ public class SileroVadNode : IDisposable
     
     public void ResetStates()
     {
-        _state = new float[2][][];
-        _state[0] = new float[1][];
-        _state[1] = new float[1][];
-        _state[0][0] = new float[128];
-        _state[1][0] = new float[128];
-        _context = Array.Empty<float[]>();
+        _state = new float[256];
+        _context = [];
         _lastSr = 0;
         _lastBatchSize = 0;
     }
-    
 
     // ReSharper disable once InconsistentNaming
     public float GetSpeechProbability(ReadOnlySpan<float> audio16kHz)
@@ -49,15 +44,7 @@ public class SileroVadNode : IDisposable
         const int batchSize = 1;
         
         // Reset states if needed
-        if (_lastBatchSize == 0)
-        {
-            ResetStates();
-        }
-        if (_lastSr != 0 && _lastSr != SampleRate16k)
-        {
-            ResetStates();
-        }
-        if (_lastBatchSize != 0 && _lastBatchSize != batchSize)
+        if (_lastBatchSize == 0 || (_lastSr != 0 && _lastSr != SampleRate16k) || (_lastBatchSize != 0 && _lastBatchSize != batchSize))
         {
             ResetStates();
         }
@@ -77,25 +64,9 @@ public class SileroVadNode : IDisposable
         _context[0].CopyTo(inputWithContext, 0);
         audio16kHz.CopyTo(inputWithContext.AsSpan(ContextSize16k));
         
-        // Prepare tensors
         var inputTensor = new DenseTensor<float>(inputWithContext, new[] { 1, inputWithContext.Length });
         var srTensor = new DenseTensor<long>(new[] { (long)SampleRate16k }, new[] { 1 });
-        
-        // Flatten state to 1D array for tensor
-        var stateFlat = new float[_state.Length * _state[0].Length * _state[0][0].Length];
-        var idx = 0;
-        for (var i = 0; i < _state.Length; i++)
-        {
-            for (var j = 0; j < _state[i].Length; j++)
-            {
-                for (var k = 0; k < _state[i][j].Length; k++)
-                {
-                    stateFlat[idx++] = _state[i][j][k];
-                }
-            }
-        }
-        
-        var stateTensor = new DenseTensor<float>(stateFlat, new[] { _state.Length, _state[0].Length, _state[0][0].Length });
+        var stateTensor = new DenseTensor<float>(_state, new[] { 2, 1, 128 });
         
         var inputs = new List<NamedOnnxValue>
         {
@@ -113,18 +84,17 @@ public class SileroVadNode : IDisposable
         // Update context - save last ContextSize16k samples
         Array.Copy(inputWithContext, inputWithContext.Length - ContextSize16k, _context[0], 0, ContextSize16k);
         
-        // Update state
-        _state = new float[newState.Dimensions[0]][][];
-        for (int i = 0; i < newState.Dimensions[0]; i++)
+        if (newState is DenseTensor<float> denseState)
         {
-            _state[i] = new float[newState.Dimensions[1]][];
-            for (int j = 0; j < newState.Dimensions[1]; j++)
+            denseState.Buffer.Span.CopyTo(_state);
+        }
+        else
+        {
+            // Fallback just in case ML.ONNX changes underlying tensor types
+            var idx = 0;
+            foreach (var val in newState)
             {
-                _state[i][j] = new float[newState.Dimensions[2]];
-                for (int k = 0; k < newState.Dimensions[2]; k++)
-                {
-                    _state[i][j][k] = newState[i, j, k];
-                }
+                _state[idx++] = val;
             }
         }
         
@@ -136,6 +106,6 @@ public class SileroVadNode : IDisposable
     
     public void Dispose()
     {
-        _session?.Dispose();
+        _session.Dispose();
     }
 }
