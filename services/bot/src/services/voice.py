@@ -4,7 +4,6 @@ import logging
 from typing import Tuple
 from generated import brain_pb2, brain_pb2_grpc
 from services.audio_stream import AudioStreamService
-from services.vad import VADService
 from services.network_sink import GrpcVadAudioSink
 from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
@@ -21,7 +20,6 @@ class VoiceService:
         event_stream: EventStreamService,
         state_service: StateService,
         audio_stream: AudioStreamService,
-        vad_service: VADService,
         keepalive_service: VoiceKeepaliveService
     ) -> None:
         self.brain = brain_stub
@@ -30,16 +28,9 @@ class VoiceService:
         self.event_stream = event_stream
         self.state = state_service
         self.audio_stream = audio_stream
-        self.vad = vad_service
         self.keepalive = keepalive_service
 
         self.bot: discord.Bot | None = None  # Injected later
-
-        try:
-            self.vad.load_model()
-        except Exception as e:
-            logging.error(f"Failed to preload Silero VAD: {e}")
-            raise
 
     def set_bot(self, bot: discord.Bot):
         self.bot = bot
@@ -238,6 +229,10 @@ class VoiceService:
         
         vc = guild.voice_client
         if vc.is_connected():
+            # is_silent = not any(pcm_data)
+            # if is_silent:
+            #     return
+            
             try:
                 vc.send_audio_packet(pcm_data, encode=True)
                 

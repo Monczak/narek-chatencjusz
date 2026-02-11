@@ -1,5 +1,7 @@
 using System.Buffers;
 using System.Threading.Channels;
+using System.Runtime.InteropServices;
+using System.Collections.Concurrent;
 using BrainService.Domain.Audio;
 
 namespace BrainService.Services.Audio.Nodes;
@@ -10,22 +12,22 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     {
         FullMode = BoundedChannelFullMode.Wait
     });
-    private readonly Dictionary<string, ChannelReader<AudioFrame>> _inputs = new();
+    
+    private readonly ConcurrentDictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
 
-    // 48kHz stereo, 20ms frames
-    private const int FrameSize = 960 * 2; // 1920 samples (960 per channel)
+    private const int FrameSize = 960 * 2; 
     
     public ChannelReader<AudioFrame> Output => _output.Reader;
 
     public void AddInput(string name, ChannelReader<AudioFrame> input)
     {
-        _inputs[name] = input ?? throw new ArgumentNullException(nameof(input));
+        _inputs.TryAdd(name, (input ?? throw new ArgumentNullException(nameof(input)), new List<float>(FrameSize * 2)));
         logger.LogInformation("Added input '{Name}' to mixer", name);
     }
     
     public void RemoveInput(string name)
     {
-        if (_inputs.Remove(name))
+        if (_inputs.TryRemove(name, out _))
         {
             logger.LogInformation("Removed input '{Name}' from mixer", name);
         }
@@ -33,37 +35,44 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     
     public async Task StartAsync(CancellationToken ct)
     {
-        logger.LogInformation("MixerNode started with {Count} inputs", _inputs.Count);
+        logger.LogInformation("MixerNode started");
         
         var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
         
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (await timer.WaitForNextTickAsync(ct))
             {
                 Array.Clear(mixBuffer, 0, FrameSize);
                 var timestamp = DateTime.UtcNow;
                 
-                // Pull from all available inputs and mix
-                foreach (var (name, input) in _inputs.ToArray()) // ToArray to avoid modification issues
+                foreach (var inputData in _inputs.Values)
                 {
-                    // Non-blocking read - if no data available, contribute silence
-                    if (input.TryRead(out var frame))
+                    while (inputData.Reader.TryRead(out var frame))
                     {
-                        var span = frame.Samples.Span;
-                        var samplesToMix = Math.Min(span.Length, FrameSize);
+                        inputData.Buffer.AddRange(frame.Samples.Span);
+                        if (frame.Timestamp > timestamp) timestamp = frame.Timestamp;
                         
-                        // Mix by summing and clamping
+                        // CRITICAL: Return the input frame's array to the pool!
+                        // This prevents memory leaks since BotSourceNode is now Renting.
+                        if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
+                        {
+                            ArrayPool<float>.Shared.Return(segment.Array);
+                        }
+                    }
+                    
+                    var samplesAvailable = inputData.Buffer.Count;
+                    var samplesToMix = Math.Min(samplesAvailable, FrameSize);
+                    
+                    if (samplesToMix > 0)
+                    {
+                        var span = CollectionsMarshal.AsSpan(inputData.Buffer);
                         for (int i = 0; i < samplesToMix; i++)
                         {
                             mixBuffer[i] = Math.Clamp(mixBuffer[i] + span[i], -1f, 1f);
                         }
-                        
-                        // Use most recent timestamp
-                        if (frame.Timestamp > timestamp)
-                        {
-                            timestamp = frame.Timestamp;
-                        }
+                        inputData.Buffer.RemoveRange(0, samplesToMix);
                     }
                 }
                 
@@ -81,12 +90,7 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
         }
         catch (OperationCanceledException)
         {
-            logger.LogInformation("MixerNode cancelled");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "MixerNode error");
-            throw;
+            // Normal shutdown
         }
         finally
         {

@@ -9,10 +9,11 @@ public class ResamplerNode : IAudioNode
 {
     private readonly Channel<AudioFrame> _output;
     private readonly ChannelReader<AudioFrame> _input;
-    private readonly WdlResampler _resampler;
     private readonly int _fromRate;
     private readonly int _toRate;
     private readonly ILogger<ResamplerNode> _logger;
+    
+    private readonly Dictionary<ulong, WdlResampler> _resamplers = new();
     
     public ChannelReader<AudioFrame> Output => _output.Reader;
     
@@ -27,17 +28,12 @@ public class ResamplerNode : IAudioNode
         _toRate = toRate;
         _logger = logger;
         
-        _resampler = new WdlResampler();
-        _resampler.SetFeedMode(true);
-        _resampler.SetRates(fromRate, toRate);
-        
         _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4)
         {
             FullMode = BoundedChannelFullMode.Wait
         });
         
-        _logger.LogInformation("ResamplerNode: {FromRate}Hz -> {ToRate}Hz",
-            fromRate, toRate);
+        _logger.LogInformation("ResamplerNode: {FromRate}Hz -> {ToRate}Hz", fromRate, toRate);
     }
     
     public async Task StartAsync(CancellationToken ct)
@@ -46,6 +42,16 @@ public class ResamplerNode : IAudioNode
         {
             await foreach (var frame in _input.ReadAllAsync(ct))
             {
+                // Retrieve or create the user's dedicated resampler state
+                if (!_resamplers.TryGetValue(frame.UserId, out var resampler))
+                {
+                    resampler = new WdlResampler();
+                    resampler.SetFeedMode(true);
+                    resampler.SetRates(_fromRate, _toRate);
+                    _resamplers[frame.UserId] = resampler;
+                    _logger.LogDebug("Created dedicated resampler for user {UserId}", frame.UserId);
+                }
+
                 var inSamples = frame.Samples.ToArray();
                 
                 var ratio = (double)_toRate / _fromRate;
@@ -54,9 +60,9 @@ public class ResamplerNode : IAudioNode
                 
                 try
                 {
-                    var inputCount = _resampler.ResamplePrepare(inSamples.Length, 1, out var inBuffer, out var inBufferOffset);
+                    var inputCount = resampler.ResamplePrepare(inSamples.Length, 1, out var inBuffer, out var inBufferOffset);
                     Array.Copy(inSamples, 0, inBuffer, inBufferOffset, inputCount);
-                    var outSamples = _resampler.ResampleOut(outBuffer, 0, inputCount, outBuffer.Length, 1);
+                    var outSamples = resampler.ResampleOut(outBuffer, 0, inputCount, outBuffer.Length, 1);
                     
                     var resampledFrame = frame with { Samples = outBuffer.AsMemory(0, outSamples) };
                     
@@ -64,7 +70,7 @@ public class ResamplerNode : IAudioNode
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error resampling frame");
+                    _logger.LogError(ex, "Error resampling frame for user {UserId}", frame.UserId);
                     ArrayPool<float>.Shared.Return(outBuffer);
                     throw;
                 }

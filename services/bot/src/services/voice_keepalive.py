@@ -25,10 +25,8 @@ class VoiceKeepaliveService:
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._keepalive_loop())
-            logging.info("VoiceKeepaliveService started")
     
     async def stop(self):
-        logging.info("Stopping VoiceKeepaliveService")
         self._running = False
         if self._task:
             self._task.cancel()
@@ -36,13 +34,11 @@ class VoiceKeepaliveService:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        logging.info("VoiceKeepaliveService stopped")
     
     def mark_audio_sent(self, guild_id: int):
         self._last_sent[guild_id] = time.time()
     
     async def _keepalive_loop(self):
-        """Main loop that sends keepalive silence frames"""
         while self._running:
             try:
                 now = time.time()
@@ -60,7 +56,7 @@ class VoiceKeepaliveService:
                         try:
                             vc.send_audio_packet(SILENCE_FRAME, encode=True)
                             self._last_sent[guild_id] = now
-                            logging.warning(f"Sent keepalive silence to guild {guild_id}")
+                            logging.debug(f"Sent keepalive silence to guild {guild_id}")
                         except Exception as e:
                             logging.warning(f"Failed to send keepalive to guild {guild_id}: {e}")
                 

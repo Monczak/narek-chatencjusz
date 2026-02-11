@@ -27,6 +27,11 @@ public class SessionAudioGraph : IAsyncDisposable
     private readonly MixerNode _mixer;
     private readonly BotSinkNode _botSink;
     
+    private readonly ResamplerNode _testResampler16to48;
+    private readonly ChannelConverterNode _testMonoToStereo;
+    
+    private readonly UserDemuxerNode _demuxer;
+    
     public SessionAudioGraph(
         string sessionId,
         ulong guildId,
@@ -85,6 +90,30 @@ public class SessionAudioGraph : IAsyncDisposable
         // var monoToStereo = new ChannelConverterNode(ttsResampler.Output, true, ...)
         // _mixer.AddInput("tts", monoToStereo.Output);
         
+        // --- TEST DSP ROUTING ---
+        _testResampler16to48 = new ResamplerNode(
+            _vadGate.Output,
+            fromRate: 16000,
+            toRate: 48000,
+            loggerFactory.CreateLogger<ResamplerNode>()
+        );
+
+        _testMonoToStereo = new ChannelConverterNode(
+            _testResampler16to48.Output,
+            monoToStereo: true,
+            loggerFactory.CreateLogger<ChannelConverterNode>()
+        );
+        
+        _demuxer = new UserDemuxerNode(
+            _testMonoToStereo.Output,
+            onNewUserStream: (userId, stream) => 
+            {
+                _mixer.AddInput($"echo_user_{userId}", stream);
+            },
+            loggerFactory.CreateLogger<UserDemuxerNode>()
+        );
+        // -------------------------
+        
         // Bot Sink: Converts float32 to int16 PCM, streams to bot at 20ms intervals
         _botSink = new BotSinkNode(
             _mixer.Output,
@@ -109,17 +138,25 @@ public class SessionAudioGraph : IAsyncDisposable
             _nodeTasks.Add(Task.Run(() => _stereoToMono.StartAsync(ct), ct));
             _nodeTasks.Add(Task.Run(() => _resampler48to16.StartAsync(ct), ct));
             _nodeTasks.Add(Task.Run(() => _vadGate.StartAsync(ct), ct));
+            
+            // --- TEST DSP ROUTING ---
+            _nodeTasks.Add(Task.Run(() => _testResampler16to48.StartAsync(ct), ct));
+            _nodeTasks.Add(Task.Run(() => _testMonoToStereo.StartAsync(ct), ct));
+            _nodeTasks.Add(Task.Run(() => _demuxer.StartAsync(ct), ct));
+            _nodeTasks.Add(Task.Run(() => _mixer.StartAsync(ct), ct));
+            // ------------------------
+            
             _nodeTasks.Add(Task.Run(() => _mixer.StartAsync(ct), ct));
             _nodeTasks.Add(Task.Run(() => _botSink.StartAsync(ct), ct));
             
-            _nodeTasks.Add(Task.Run(async () => 
-            {
-                await foreach (var frame in _vadGate.Output.ReadAllAsync(ct))
-                {
-                    // Discard the frame (Acts as a black hole sink)
-                    // TODO: Route the frame to ASR once it's ready
-                }
-            }, ct));
+            // _nodeTasks.Add(Task.Run(async () => 
+            // {
+            //     await foreach (var frame in _testMonoToStereo.Output.ReadAllAsync(ct))
+            //     {
+            //         // Discard the frame (Acts as a black hole sink)
+            //         // TODO: Route the frame to ASR once it's ready
+            //     }
+            // }, ct));
             
             // Wait for all nodes to complete
             await Task.WhenAll(_nodeTasks);

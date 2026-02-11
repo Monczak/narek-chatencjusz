@@ -9,7 +9,6 @@ from cogs.util import UtilCog
 from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
 from services.audio_stream import AudioStreamService
-from services.vad import VADService
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
@@ -75,10 +74,6 @@ class Container(containers.DeclarativeContainer):
         interaction_service=interaction_service
     )
 
-    vad_service = providers.Singleton(
-        VADService
-    )
-
     keepalive_service = providers.Singleton(
         VoiceKeepaliveService,
         bot=None  # Will be set after bot creation
@@ -99,7 +94,6 @@ class Container(containers.DeclarativeContainer):
         event_stream=event_stream_service,
         state_service=state_service,
         audio_stream=audio_stream_service,
-        vad_service=vad_service,
         keepalive_service=keepalive_service
     )
 

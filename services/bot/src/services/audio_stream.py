@@ -3,10 +3,9 @@ import logging
 import time
 from typing import Dict, Optional
 from generated import brain_pb2, brain_pb2_grpc
-from services.voice import VoiceService
 
 class SessionAudioStream:
-    def __init__(self, session_id: str, guild_id: int, brain_stub: brain_pb2_grpc.BrainStub, voice_service: VoiceService):
+    def __init__(self, session_id: str, guild_id: int, brain_stub: brain_pb2_grpc.BrainStub, voice_service):
         self.session_id = session_id
         self.guild_id = guild_id
         self.brain = brain_stub
@@ -16,16 +15,23 @@ class SessionAudioStream:
         self._stop_event = asyncio.Event()
         self._stream_task: Optional[asyncio.Task] = None
         
+        self._output_queue = asyncio.Queue(maxsize=50) # Max 1 second buffer to prevent runaway latency
+        self._playback_task: Optional[asyncio.Task] = None
+        
         logging.info(f"Created SessionAudioStream for session {session_id}, guild {guild_id}")
     
     async def start(self):
         if self._stream_task is None:
             self._stream_task = asyncio.create_task(self._run())
-            logging.info(f"Started audio stream for session {self.session_id}")
+            self._playback_task = asyncio.create_task(self._playback_loop())
     
     async def stop(self):
         logging.info(f"Stopping audio stream for session {self.session_id}")
         self._stop_event.set()
+        
+        if self._playback_task:
+            self._playback_task.cancel()
+            
         if self._stream_task:
             try:
                 await asyncio.wait_for(self._stream_task, timeout=5.0)
@@ -58,6 +64,50 @@ class SessionAudioStream:
                 continue
             except asyncio.CancelledError:
                 break
+                
+    async def _playback_loop(self):
+        FRAME_DURATION = 0.02  # 20ms frames
+        PREBUFFER_FRAMES = 5   # Wait for 100ms of audio to absorb network jitter before playing
+        
+        buffering = True
+        next_frame_time = 0.0
+        
+        while not self._stop_event.is_set():
+            try:
+                if buffering:
+                    if self._output_queue.qsize() < PREBUFFER_FRAMES:
+                        await asyncio.sleep(0.01)
+                        continue
+                    else:
+                        buffering = False
+                        next_frame_time = time.perf_counter() + FRAME_DURATION
+
+                try:
+                    pcm_data = self._output_queue.get_nowait()
+                    await self.voice.send_audio_to_guild(self.guild_id, pcm_data)
+                except asyncio.QueueEmpty:
+                    logging.debug(f"Jitter buffer underrun for session {self.session_id}, re-buffering...")
+                    buffering = True
+                    continue
+                
+                now = time.perf_counter()
+                sleep_time = next_frame_time - now
+                
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                    
+                # Advance our absolute target time for the next loop
+                next_frame_time += FRAME_DURATION
+                
+                # If the CPU/loop stalled heavily (e.g., GC pause), reset the timeline so we don't speed-up 
+                if now > next_frame_time + 0.1:
+                    next_frame_time = now + FRAME_DURATION
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.error(f"Error in jitter buffer playback loop: {e}")
+                await asyncio.sleep(0.02)
     
     async def _run(self):
         while not self._stop_event.is_set():
@@ -71,7 +121,16 @@ class SessionAudioStream:
                     if self._stop_event.is_set():
                         break
                     
-                    await self.voice.send_audio_to_guild(self.guild_id, audio_frame.pcm_data)
+                    # Push incoming frames into our elastic Jitter Buffer instead of sending immediately
+                    try:
+                        self._output_queue.put_nowait(audio_frame.pcm_data)
+                    except asyncio.QueueFull:
+                        # Prevent runaway latency by popping the oldest unplayed frame
+                        try:
+                            self._output_queue.get_nowait()
+                            self._output_queue.put_nowait(audio_frame.pcm_data)
+                        except asyncio.QueueEmpty:
+                            pass
                 
             except Exception as e:
                 if not self._stop_event.is_set():

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using BrainService.Proto;
@@ -14,7 +15,7 @@ public class BotSourceNode(
     ILogger<BotSourceNode> logger)
     : IAudioNode
 {
-    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4)
+    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(16)
     {
         FullMode = BoundedChannelFullMode.Wait
     });
@@ -22,50 +23,71 @@ public class BotSourceNode(
 
     public ChannelReader<AudioFrame> Output => _output.Reader;
     
-    // Audio format constants - bot sends 48kHz 16-bit stereo PCM
-    private const int SampleRate = 48000;
-    private const int Channels = 2; // Stereo
-    private const int BytesPerSample = 2; // int16
-    private const int FrameDurationMs = 20;
-    private const int SamplesPerFrame = (SampleRate * FrameDurationMs / 1000) * Channels; // 1920 samples (960 per channel)
+    private const int SamplesPerFrame = 1920; // 48kHz * 20ms * 2 channels
+    
+    private const int PreBufferThreshold = 6; // Wait for 6 frames (120ms) before playing
+    private const int ResetThresholdMs = 200; // If no data for 200ms, assume silence and re-buffer
 
     public async Task StartAsync(CancellationToken ct)
     {
         logger.LogInformation("BotSourceNode started for session {SessionId}", sessionId);
         
+        var jitterQueue = new Queue<AudioFrame>();
+        var isBuffering = true;
+        var lastFrameReceiveTime = DateTime.UtcNow;
+        
         try
         {
             await foreach (var grpcFrame in _grpcInput.ReadAllAsync(ct))
             {
-                // Validate frame
-                if (grpcFrame.PcmData.Length != SamplesPerFrame * BytesPerSample)
+                var now = DateTime.UtcNow;
+                var timeSinceLastFrame = (now - lastFrameReceiveTime).TotalMilliseconds;
+                lastFrameReceiveTime = now;
+
+                // 1. Underrun/Silence Detection
+                if (!isBuffering && timeSinceLastFrame > ResetThresholdMs)
                 {
-                    logger.LogWarning("Received frame with unexpected size: {Size} bytes (expected {Expected})",
-                        grpcFrame.PcmData.Length, SamplesPerFrame * BytesPerSample);
+                    logger.LogDebug("Stream gap of {Gap}ms detected. Re-buffering...", (int)timeSinceLastFrame);
+                    isBuffering = true;
+                }
+                
+                // Validate frame
+                if (grpcFrame.PcmData.Length != SamplesPerFrame * 2) // 2 bytes per sample
+                {
+                    logger.LogWarning("Invalid frame size: {Size}", grpcFrame.PcmData.Length);
                     continue;
                 }
                 
-                // Convert PCM int16 to float32 [-1.0, 1.0]
+                // Convert PCM int16 to float32
                 var floatSamples = ArrayPool<float>.Shared.Rent(SamplesPerFrame);
-                try
+                ConvertPcmToFloat(grpcFrame.PcmData.Span, floatSamples.AsSpan(0, SamplesPerFrame));
+                
+                var audioFrame = new AudioFrame
                 {
-                    ConvertPcmToFloat(grpcFrame.PcmData.Span, floatSamples.AsSpan(0, SamplesPerFrame));
+                    Samples = floatSamples.AsMemory(0, SamplesPerFrame),
+                    UserId = grpcFrame.UserId,
+                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime,
+                    SessionId = sessionId
+                };
+                
+                if (isBuffering)
+                {
+                    jitterQueue.Enqueue(audioFrame);
                     
-                    var audioFrame = new AudioFrame
+                    if (jitterQueue.Count >= PreBufferThreshold)
                     {
-                        Samples = floatSamples.AsMemory(0, SamplesPerFrame),
-                        UserId = grpcFrame.UserId,
-                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime,
-                        SessionId = sessionId
-                    };
-                    
-                    await _output.Writer.WriteAsync(audioFrame, ct);
+                        logger.LogDebug("Jitter buffer full ({Count} frames). Flushing.", jitterQueue.Count);
+                        while (jitterQueue.TryDequeue(out var queuedFrame))
+                        {
+                            await _output.Writer.WriteAsync(queuedFrame, ct);
+                        }
+                        isBuffering = false;
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    logger.LogError(ex, "Error processing frame from user {UserId}", grpcFrame.UserId);
-                    ArrayPool<float>.Shared.Return(floatSamples);
-                    throw;
+                    // Fast path
+                    await _output.Writer.WriteAsync(audioFrame, ct);
                 }
             }
         }
@@ -80,6 +102,15 @@ public class BotSourceNode(
         }
         finally
         {
+            // Cleanup leftover frames
+            while (jitterQueue.TryDequeue(out var frame))
+            {
+                if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
+                {
+                    ArrayPool<float>.Shared.Return(segment.Array);
+                }
+            }
+            
             _output.Writer.Complete();
             logger.LogInformation("BotSourceNode stopped for session {SessionId}", sessionId);
         }
