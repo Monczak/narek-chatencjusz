@@ -12,7 +12,7 @@ namespace BrainService.Services.Audio;
 public class SessionAudioGraph : IAsyncDisposable
 {
     private readonly string _sessionId;
-    private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _internalCts = new();
     private readonly List<Task> _nodeTasks = [];
     private readonly ILogger<SessionAudioGraph> _logger;
     private readonly IHubContext<DashboardHub> _hub;
@@ -136,9 +136,10 @@ public class SessionAudioGraph : IAsyncDisposable
         _logger.LogInformation("Audio graph built for session {SessionId}", sessionId);
     }
     
-    public async Task RunAsync()
+    public async Task RunAsync(CancellationToken externalToken = default)
     {
-        var ct = _cts.Token;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken, _internalCts.Token);
+        var ct = linkedCts.Token;
         _logger.LogInformation("Starting audio graph for session {SessionId}", _sessionId);
         
         try
@@ -153,7 +154,7 @@ public class SessionAudioGraph : IAsyncDisposable
                 {
                     _logger.LogInformation(
                         "BotSourceNode finished – cancelling graph for session {SessionId}", _sessionId);
-                    await _cts.CancelAsync();
+                    await _internalCts.CancelAsync();
                 }
             }, ct);
             
@@ -198,13 +199,19 @@ public class SessionAudioGraph : IAsyncDisposable
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                var nodeMetrics = _monitoredNodes
-                    .Select(n => new DspNodeMetrics(n.Name, n.Node.QueueDepth))
-                    .ToList();
+                try 
+                {
+                    var nodeMetrics = _monitoredNodes
+                        .Select(n => new DspNodeMetrics(n.Name, n.Node.QueueDepth))
+                        .ToList();
                 
-                var metrics = new DspSessionMetrics(_sessionId, nodeMetrics, DateTime.UtcNow);
-                
-                await _hub.Clients.All.SendAsync("DspMetricsUpdated", metrics, ct);
+                    var metrics = new DspSessionMetrics(_sessionId, nodeMetrics, DateTime.UtcNow);
+                    await _hub.Clients.All.SendAsync("DspMetricsUpdated", metrics, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to push DSP metrics");
+                }
             }
         }
         catch (OperationCanceledException)
@@ -217,7 +224,7 @@ public class SessionAudioGraph : IAsyncDisposable
     {
         _logger.LogInformation("Disposing audio graph for session {SessionId}", _sessionId);
         
-        await _cts.CancelAsync();
+        await _internalCts.CancelAsync();
         
         try
         {
@@ -233,7 +240,7 @@ public class SessionAudioGraph : IAsyncDisposable
             _logger.LogError(ex, "Error waiting for nodes to complete");
         }
         
-        _cts.Dispose();
+        _internalCts.Dispose();
         _logger.LogInformation("Audio graph disposed for session {SessionId}", _sessionId);
         
         GC.SuppressFinalize(this);

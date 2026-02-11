@@ -233,7 +233,7 @@ public class BrainGrpcService(
         {
             // Create audio processing graph for this session
             var graph = await audioGraphFactory.CreateSessionGraphAsync(
-                sessionId, requestStream, responseStream, cts.Token);
+                sessionId, requestStream, responseStream);
             
             await using (graph)
             {

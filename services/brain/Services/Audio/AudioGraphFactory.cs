@@ -19,8 +19,7 @@ public class AudioGraphFactory(
     public async Task<SessionAudioGraph> CreateSessionGraphAsync(
         string sessionId,
         IAsyncStreamReader<UserAudioFrame> botInputStream,
-        IServerStreamWriter<AudioFrame> botOutputStream,
-        CancellationToken ct = default)
+        IServerStreamWriter<AudioFrame> botOutputStream)
     {
         _logger.LogInformation("Creating audio graph for session {SessionId}", sessionId);
         

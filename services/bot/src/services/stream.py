@@ -68,7 +68,7 @@ class BaseStreamService(Generic[T]):
                 if self.brain:
                     metadata = (("node_id", self.node_id), )
                     stream_call = await self._create_stream_call(gen, metadata)
-                    logging.info("Audio stream opened")
+                    logging.info(f"{self.__class__.__name__} stream opened")
                     
                     await self._process_stream(stream_call)
 
