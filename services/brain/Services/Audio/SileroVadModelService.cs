@@ -24,8 +24,7 @@ public class SileroVadModelService
         _modelUrl = configuration.GetValue<string>("Audio:VadModelUrl") 
             ?? "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx";
         
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var modelDir = Path.Combine(appDataPath, "BrainService", "models");
+        var modelDir = Path.Combine(AppContext.BaseDirectory, "models");
         _modelPath = Path.Combine(modelDir, "silero_vad.onnx");
     }
     
