@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 
@@ -38,73 +39,68 @@ public class ChannelConverterNode : IAudioNode
             await foreach (var frame in _input.ReadAllAsync(ct))
             {
                 var inSamples = frame.Samples.Span;
-                
-                if (_monoToStereo)
+                float[]? outBuffer = null;
+
+                try
                 {
-                    // Mono -> Stereo: duplicate each sample
-                    var outLength = inSamples.Length * 2;
-                    var outBuffer = ArrayPool<float>.Shared.Rent(outLength);
-                    
-                    try
+                    int outLength;
+                    if (_monoToStereo)
                     {
+                        outLength = inSamples.Length * 2;
+                        outBuffer = ArrayPool<float>.Shared.Rent(outLength);
+
                         for (int i = 0; i < inSamples.Length; i++)
                         {
-                            outBuffer[i * 2] = inSamples[i];     // Left
-                            outBuffer[i * 2 + 1] = inSamples[i]; // Right
+                            outBuffer[i * 2] = inSamples[i]; // L
+                            outBuffer[i * 2 + 1] = inSamples[i]; // R
                         }
-                        
-                        var convertedFrame = frame with { Samples = outBuffer.AsMemory(0, outLength) };
-                        
-                        await _output.Writer.WriteAsync(convertedFrame, ct);
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _logger.LogError(ex, "Error converting mono to stereo");
-                        ArrayPool<float>.Shared.Return(outBuffer);
-                        throw;
-                    }
-                }
-                else
-                {
-                    // Stereo -> Mono: average both channels
-                    if (inSamples.Length % 2 != 0)
-                    {
-                        _logger.LogWarning("Expected stereo audio (even sample count), got {Count} samples", inSamples.Length);
-                        // Pass through as-is if already mono
-                        await _output.Writer.WriteAsync(frame, ct);
-                        continue;
-                    }
-                    
-                    var outLength = inSamples.Length / 2;
-                    var outBuffer = ArrayPool<float>.Shared.Rent(outLength);
-                    
-                    try
-                    {
+                        if (inSamples.Length % 2 != 0)
+                        {
+                            _logger.LogWarning(
+                                "Stereo->Mono: expected even sample count, got {Count}", inSamples.Length);
+                            // Pass through as-is; don't touch the buffer ownership
+                            await _output.Writer.WriteAsync(frame, ct);
+                            continue;
+                        }
+
+                        outLength = inSamples.Length / 2;
+                        outBuffer = ArrayPool<float>.Shared.Rent(outLength);
+
                         for (int i = 0; i < outLength; i++)
                         {
-                            outBuffer[i] = (inSamples[i * 2] + inSamples[i * 2 + 1]) / 2f;
+                            outBuffer[i] = (inSamples[i * 2] + inSamples[i * 2 + 1]) * 0.5f;
                         }
-                        
-                        var convertedFrame = frame with { Samples = outBuffer.AsMemory(0, outLength) };
-                        
-                        await _output.Writer.WriteAsync(convertedFrame, ct);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error converting stereo to mono");
+                    
+                    ReturnFrameBuffer(frame);
+
+                    await _output.Writer.WriteAsync(
+                        frame with { Samples = outBuffer.AsMemory(0, outLength) }, ct);
+                    outBuffer = null; // Ownership transferred downstream
+                }
+                finally
+                {
+                    if (outBuffer != null)
                         ArrayPool<float>.Shared.Return(outBuffer);
-                        throw;
-                    }
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown
+             // Normal shutdown
         }
         finally
         {
             _output.Writer.Complete();
         }
+    }
+    
+    private static void ReturnFrameBuffer(AudioFrame frame)
+    {
+        if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+            ArrayPool<float>.Shared.Return(seg.Array);
     }
 }

@@ -21,8 +21,11 @@
             <MudItem xs="12" sm="6">
                 <MudSlider @bind-Value="_config.Vad.StopThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Error">Stop Threshold: @_config.Vad.StopThreshold</MudSlider>
             </MudItem>
-            <MudItem xs="12">
+            <MudItem xs="12" sm="6">
                 <MudNumericField @bind-Value="_config.Vad.SilenceDurationMs" Label="Silence Duration (ms)" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_config.Vad.PreBufferFrameCount" Label="Pre Buffer Frame Count" Variant="Variant.Outlined" />
             </MudItem>
         </MudGrid>
     </MudCardContent>

@@ -1,5 +1,6 @@
+using System.Buffers;
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices; // Required for CollectionsMarshal
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using BrainService.Services.Configuration;
@@ -11,7 +12,6 @@ public class VadGateNode : IAudioNode
 {
     private readonly Channel<AudioFrame> _output;
     private readonly ChannelReader<AudioFrame> _input;
-    private readonly Dictionary<ulong, (SileroVadNode vad, List<float> buffer)> _userVadNodes;
     private readonly VoiceSessionService _sessionService;
     private readonly BrainConfigService _configService;
     private readonly SileroVadModelService _vadModelService;
@@ -19,16 +19,26 @@ public class VadGateNode : IAudioNode
     private readonly ulong _guildId;
     private readonly ILogger<VadGateNode> _logger;
     
-    // Per-user state tracking
-    private class UserVadState
+    private readonly CancellationTokenSource _silenceDetectionCts = new();
+    
+    // Per-user state
+    private readonly Dictionary<ulong, UserVadData> _userVad = new();
+    private readonly ConcurrentDictionary<ulong, UserVadState> _userStates = new();
+    
+    private sealed class UserVadData(SileroVadNode vad, int preBufferCapacity)
     {
-        public bool IsSpeaking { get; set; }
-        public DateTime LastSpeakingFrame { get; set; }
-        public DateTime LastFrameReceived { get; set; }
+        public SileroVadNode Vad { get; } = vad;
+        public List<float> SampleBuffer { get; } = new(VadWindowSize * 2);
+        public Queue<AudioFrame> PreBuffer { get; } = new(preBufferCapacity + 1);
+        public int PreBufferCapacity { get; } = preBufferCapacity;
     }
     
-    private readonly ConcurrentDictionary<ulong, UserVadState> _userStates = new();
-    private readonly CancellationTokenSource _silenceDetectionCts = new();
+    private sealed class UserVadState
+    {
+        public bool IsSpeaking;
+        public DateTime LastSpeakingFrame;
+        public DateTime LastFrameReceived;
+    }
     
     public ChannelReader<AudioFrame> Output => _output.Reader;
     
@@ -52,8 +62,6 @@ public class VadGateNode : IAudioNode
         _guildId = guildId;
         _logger = logger;
         
-        _userVadNodes = new Dictionary<ulong, (SileroVadNode, List<float>)>();
-        
         _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(8)
         {
             FullMode = BoundedChannelFullMode.Wait
@@ -65,83 +73,77 @@ public class VadGateNode : IAudioNode
     public async Task StartAsync(CancellationToken ct)
     {
         _logger.LogInformation("VadGateNode started for session {SessionId}", _sessionId);
-        
+
         try
         {
             await foreach (var frame in _input.ReadAllAsync(ct))
             {
-                // Get or create VAD node and buffer for this user
-                if (!_userVadNodes.TryGetValue(frame.UserId, out var userVadData))
+                if (!_userVad.TryGetValue(frame.UserId, out var userData))
                 {
-                    var session = _vadModelService.CreateSession();
-                    var vadNode = new SileroVadNode(session);
-                    var newBuffer = new List<float>(VadWindowSize * 2);
-                    userVadData = (vadNode, newBuffer);
-                    _userVadNodes[frame.UserId] = userVadData;
-                    _logger.LogDebug("Created VAD node for user {UserId}", frame.UserId);
+                    var preBufferCapacity = _configService.Current.Vad.PreBufferFrameCount;
+                    var onnxSession = _vadModelService.CreateSession();
+                    var vadNode = new SileroVadNode(onnxSession);
+                    userData = new UserVadData(vadNode, preBufferCapacity);
+                    _userVad[frame.UserId] = userData;
+                    _logger.LogDebug(
+                        "Created VAD for user {UserId}, pre-buffer={Frames} frames (~{Ms}ms)",
+                        frame.UserId, preBufferCapacity, preBufferCapacity * 32);
                 }
-                
-                var (vad, buffer) = userVadData;
+
                 var state = _userStates.GetOrAdd(frame.UserId, _ => new UserVadState());
                 state.LastFrameReceived = DateTime.UtcNow;
-                
-                buffer.AddRange(frame.Samples.Span);
-                
-                var config = _configService.Current.Vad;
-                
-                while (buffer.Count >= VadWindowSize)
-                {
-                    // Zero-allocation slicing using CollectionsMarshal
-                    var chunkSpan = CollectionsMarshal.AsSpan(buffer)[..VadWindowSize];
-                    
-                    var speechProb = vad.GetSpeechProbability(chunkSpan);
-                    
-                    buffer.RemoveRange(0, VadWindowSize);
-                    
-                    var frameIndicatesSpeech = speechProb >= config.StartThreshold;
-                    
-                    switch (state.IsSpeaking)
-                    {
-                        case false when frameIndicatesSpeech:
-                            state.IsSpeaking = true;
-                            state.LastSpeakingFrame = DateTime.UtcNow;
-                        
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await _sessionService.UpdateUserSpeakingStatusAsync(_sessionId, _guildId, frame.UserId, true);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Error updating speaking status for user {UserId}", frame.UserId);
-                                }
-                            }, ct);
-                        
-                            _logger.LogDebug("User {UserId} started speaking (prob: {Prob:F2})", frame.UserId, speechProb);
-                            break;
-                        case true:
-                        {
-                            if (speechProb > config.StopThreshold)
-                            {
-                                state.LastSpeakingFrame = DateTime.UtcNow;
-                            }
 
-                            break;
-                        }
+                userData.SampleBuffer.AddRange(frame.Samples.Span);
+
+                var config = _configService.Current.Vad;
+
+                while (userData.SampleBuffer.Count >= VadWindowSize)
+                {
+                    var chunkSpan = CollectionsMarshal.AsSpan(userData.SampleBuffer)[..VadWindowSize];
+                    var prob = userData.Vad.GetSpeechProbability(chunkSpan);
+                    userData.SampleBuffer.RemoveRange(0, VadWindowSize);
+
+                    if (!state.IsSpeaking && prob >= config.StartThreshold)
+                    {
+                        state.IsSpeaking = true;
+                        state.LastSpeakingFrame = DateTime.UtcNow;
+
+                        _logger.LogDebug(
+                            "User {UserId} speech start (p={Prob:F2}), flushing {N} pre-buffer frames",
+                            frame.UserId, prob, userData.PreBuffer.Count);
+
+                        // Flush pre-roll – downstream takes ownership, don't return these
+                        while (userData.PreBuffer.TryDequeue(out var preFrame))
+                            await _output.Writer.WriteAsync(preFrame, ct);
+
+                        _ = Task.Run(() => NotifySpeaking(frame.UserId, true), ct);
+                    }
+                    else if (state.IsSpeaking && prob > config.StopThreshold)
+                    {
+                        state.LastSpeakingFrame = DateTime.UtcNow;
                     }
                 }
-                
-                // Only pass through frames when user is speaking
+
                 if (state.IsSpeaking)
                 {
                     await _output.Writer.WriteAsync(frame, ct);
+                }
+                else
+                {
+                    // Add to circular pre-buffer; evict and return oldest if full
+                    if (userData.PreBuffer.Count >= userData.PreBufferCapacity)
+                    {
+                        if (userData.PreBuffer.TryDequeue(out var evicted))
+                            ReturnFrame(evicted);
+                    }
+
+                    userData.PreBuffer.Enqueue(frame);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("VadGateNode cancelled for session {SessionId}", _sessionId);
+             // Normal shutdown
         }
         catch (Exception ex)
         {
@@ -150,65 +152,69 @@ public class VadGateNode : IAudioNode
         }
         finally
         {
-            _silenceDetectionCts.Cancel();
+            await _silenceDetectionCts.CancelAsync();
             _output.Writer.Complete();
             
-            // Clean up VAD nodes
-            foreach (var (vad, _) in _userVadNodes.Values)
+            foreach (var data in _userVad.Values)
             {
-                vad.Dispose();
+                data.Vad.Dispose();
+                while (data.PreBuffer.TryDequeue(out var f))
+                    ReturnFrame(f);
             }
-            _userVadNodes.Clear();
+            _userVad.Clear();
             
             _logger.LogInformation("VadGateNode stopped for session {SessionId}", _sessionId);
+        }
+    }
+    
+    private static void ReturnFrame(AudioFrame frame)
+    {
+        if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+            ArrayPool<float>.Shared.Return(seg.Array);
+    }
+    
+    private async Task NotifySpeaking(ulong userId, bool isSpeaking)
+    {
+        try
+        {
+            await _sessionService.UpdateUserSpeakingStatusAsync(_sessionId, _guildId, userId, isSpeaking);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating speaking status for user {UserId}", userId);
         }
     }
     
     private async Task SilenceDetectionLoopAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
-        
+
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
                 var now = DateTime.UtcNow;
-                var config = _configService.Current.Vad;
-                var silenceDuration = TimeSpan.FromMilliseconds(config.SilenceDurationMs);
-                
+                var silenceDuration = TimeSpan.FromMilliseconds(_configService.Current.Vad.SilenceDurationMs);
+
                 foreach (var (userId, state) in _userStates)
                 {
                     if (state.IsSpeaking && now - state.LastSpeakingFrame > silenceDuration)
                     {
-                        // Transition to not speaking
                         state.IsSpeaking = false;
-                        
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await _sessionService.UpdateUserSpeakingStatusAsync(_sessionId, _guildId, userId, false);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error updating speaking status for user {UserId}", userId);
-                            }
-                        });
-                        
                         _logger.LogDebug("User {UserId} stopped speaking (silence)", userId);
-                        
-                        // Cleanup stale states (no frames for 5 minutes)
-                        if (now - state.LastFrameReceived > TimeSpan.FromMinutes(5))
+                        _ = Task.Run(() => NotifySpeaking(userId, false), ct);
+                    }
+
+                    // Evict stale entries after 5 minutes of inactivity
+                    if (now - state.LastFrameReceived > TimeSpan.FromMinutes(5))
+                    {
+                        _userStates.TryRemove(userId, out _);
+                        if (_userVad.TryGetValue(userId, out var data))
                         {
-                            _userStates.TryRemove(userId, out _);
-                            
-                            if (_userVadNodes.TryGetValue(userId, out var userData))
-                            {
-                                userData.vad.Dispose();
-                                _userVadNodes.Remove(userId);
-                            }
-                            
-                            _logger.LogDebug("Cleaned up stale VAD state for user {UserId}", userId);
+                            data.Vad.Dispose();
+                            while (data.PreBuffer.TryDequeue(out var f))
+                                ReturnFrame(f);
+                            _userVad.Remove(userId);
                         }
                     }
                 }
@@ -216,7 +222,7 @@ public class VadGateNode : IAudioNode
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown
+             // Normal shutdown
         }
     }
 }

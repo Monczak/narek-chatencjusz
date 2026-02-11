@@ -1,4 +1,5 @@
 @page "/session/{SessionIdParam}"
+@using BrainService.Domain.Audio
 @using BrainService.Proto
 @using Microsoft.AspNetCore.SignalR.Client
 @inject VoiceSessionService SessionService
@@ -36,7 +37,7 @@ else
                 <MudText Typo="Typo.caption" Class="mt-1">Last Updated: @GetTimeAgo(_session.LastUpdated)</MudText>
             </MudStack>
         </MudItem>
-        
+
         <MudItem xs="12">
             <MudCard>
                 <MudCardHeader>
@@ -76,37 +77,92 @@ else
                     </MudGrid>
                 </MudCardContent>
             </MudCard>
-                
-            <MudCard Class="mt-4">
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h5">Session Logs</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">TODO</MudText>
-                </MudCardContent>
-            </MudCard>
         </MudItem>
         
         <MudItem xs="12">
             <MudCard>
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h5">Actions</MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudText Typo="Typo.h5">DSP Performance</MudText>
+                            @if (_dspMetrics != null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                         Icon="@Icons.Material.Filled.FiberManualRecord">Live</MudChip>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @_dspMetrics.Timestamp.ToString("HH:mm:ss.fff")
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default"
+                                         Icon="@Icons.Material.Filled.FiberManualRecord">Waiting</MudChip>
+                            }
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                            Queue depth = frames waiting in each node's output channel. Non-zero = backpressure.
+                        </MudText>
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    <MudStack StretchItems="StretchItems.None" AlignItems="AlignItems.Start">
-                        <MudButton Variant="Variant.Filled" 
-                                   Color="Color.Error" 
-                                   StartIcon="@Icons.Material.Filled.CallEnd"
-                                   OnClick=@(async () => await EndSessionAsync())
-                                   Disabled="@_isBusy">
-                            End Session
-                        </MudButton>
-                            
-                    </MudStack>
+                    @if (_dspMetrics == null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            No data yet – metrics arrive once the audio graph is active.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="3">
+                            @foreach (var node in _dspMetrics.Nodes)
+                            {
+                                var chipColor = node.QueueDepth switch
+                                {
+                                    0     => Color.Default,
+                                    1 or 2 => Color.Success,
+                                    3 or 4 => Color.Warning,
+                                    _     => Color.Error
+                                };
+                                <MudPaper Outlined="true" Class="pa-3" Style="min-width:120px">
+                                    <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.caption">@node.Name</MudText>
+                                        <MudChip T="string" Color="@chipColor" Size="Size.Small">
+                                            @node.QueueDepth
+                                        </MudChip>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">frames</MudText>
+                                    </MudStack>
+                                </MudPaper>
+                            }
+                        </MudStack>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h5">Session Logs</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">TODO</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h5">Actions</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.CallEnd"
+                               OnClick=@(async () => await EndSessionAsync())
+                               Disabled="@_isBusy">
+                        End Session
+                    </MudButton>
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -115,8 +171,9 @@ else
 
 @code {
     [Parameter] public required string SessionIdParam { get; set; }
-    
+
     private VoiceSessionState? _session;
+    private DspSessionMetrics? _dspMetrics;
     private HubConnection? _hubConnection;
     private bool _isLoading = true;
     private bool _isBusy;
@@ -129,40 +186,36 @@ else
             .WithUrl(Nav.ToAbsoluteUri("/hub/dashboard"))
             .WithAutomaticReconnect()
             .Build();
-        
+
         _hubConnection.On<VoiceSessionState>("SessionUpdated", OnSessionUpdated);
+        _hubConnection.On<DspSessionMetrics>("DspMetricsUpdated", OnDspMetricsUpdated);
+
         await _hubConnection.StartAsync();
     }
 
     private async Task LoadSession()
     {
         _isLoading = true;
-        try
-        {
-            _session = await SessionService.GetSessionStateAsync(SessionIdParam);
-        }
-        finally
-        {
-            _isLoading = false;
-        }
+        try   { _session = await SessionService.GetSessionStateAsync(SessionIdParam); }
+        finally { _isLoading = false; }
     }
 
     private void OnSessionUpdated(VoiceSessionState session)
     {
         if (session.SessionId != SessionIdParam) return;
+        InvokeAsync(() => { _session = session; StateHasChanged(); });
+    }
 
-        InvokeAsync(() =>
-        {
-            _session = session;
-            StateHasChanged();
-        });
+    private void OnDspMetricsUpdated(DspSessionMetrics metrics)
+    {
+        if (metrics.SessionId != SessionIdParam) return;
+        InvokeAsync(() => { _dspMetrics = metrics; StateHasChanged(); });
     }
 
     private async Task EndSessionAsync()
     {
         if (_session == null) return;
         _isBusy = true;
-
         try
         {
             var nodeId = await NodeRegistryService.GetNodeForGuildAsync(_session.GuildId);
@@ -171,27 +224,18 @@ else
                 Snackbar.Add("No active node found for this session.", Severity.Error);
                 return;
             }
-
-            var command = new BrainCommand
+            await CommandPublisher.PublishCommandAsync(nodeId, new BrainCommand
             {
                 Disconnect = new DisconnectVoice
                 {
                     Guild = new GuildContext { Id = _session.GuildId },
                     SessionId = _session.SessionId
                 }
-            };
-
-            await CommandPublisher.PublishCommandAsync(nodeId, command);
+            });
             Snackbar.Add("End Session command sent.", Severity.Success);
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to send command: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _isBusy = false;
-        }
+        catch (Exception ex) { Snackbar.Add($"Failed to send command: {ex.Message}", Severity.Error); }
+        finally { _isBusy = false; }
     }
 
     private string GetTimeAgo(DateTime lastUpdated)

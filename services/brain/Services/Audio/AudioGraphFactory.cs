@@ -1,7 +1,9 @@
+using BrainService.Hubs;
 using BrainService.Proto;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
 using Grpc.Core;
+using Microsoft.AspNetCore.SignalR;
 
 namespace BrainService.Services.Audio;
 
@@ -9,6 +11,7 @@ public class AudioGraphFactory(
     VoiceSessionService sessionService,
     BrainConfigService configService,
     SileroVadModelService vadModelService,
+    IHubContext<DashboardHub> hub,
     ILoggerFactory loggerFactory)
 {
     private readonly ILogger<AudioGraphFactory> _logger = loggerFactory.CreateLogger<AudioGraphFactory>();
@@ -21,7 +24,6 @@ public class AudioGraphFactory(
     {
         _logger.LogInformation("Creating audio graph for session {SessionId}", sessionId);
         
-        // Get session state to extract guild ID
         var sessionState = await sessionService.GetSessionStateAsync(sessionId);
         if (sessionState == null)
         {
@@ -36,6 +38,7 @@ public class AudioGraphFactory(
             sessionService,
             configService,
             vadModelService,
+            hub,
             loggerFactory
         );
         

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using NAudio.Dsp;
@@ -42,43 +43,51 @@ public class ResamplerNode : IAudioNode
         {
             await foreach (var frame in _input.ReadAllAsync(ct))
             {
-                // Retrieve or create the user's dedicated resampler state
-                if (!_resamplers.TryGetValue(frame.UserId, out var resampler))
-                {
-                    resampler = new WdlResampler();
-                    resampler.SetFeedMode(true);
-                    resampler.SetRates(_fromRate, _toRate);
-                    _resamplers[frame.UserId] = resampler;
-                    _logger.LogDebug("Created dedicated resampler for user {UserId}", frame.UserId);
-                }
+                float[]? outBuffer = null;
 
-                var inSamples = frame.Samples.ToArray();
-                
-                var ratio = (double)_toRate / _fromRate;
-                var estimatedOutLength = (int)(inSamples.Length * ratio) + 64; 
-                var outBuffer = ArrayPool<float>.Shared.Rent(estimatedOutLength); 
-                
                 try
                 {
-                    var inputCount = resampler.ResamplePrepare(inSamples.Length, 1, out var inBuffer, out var inBufferOffset);
-                    Array.Copy(inSamples, 0, inBuffer, inBufferOffset, inputCount);
+                    if (!_resamplers.TryGetValue(frame.UserId, out var resampler))
+                    {
+                        resampler = new WdlResampler();
+                        resampler.SetFeedMode(true);
+                        resampler.SetRates(_fromRate, _toRate);
+                        _resamplers[frame.UserId] = resampler;
+                        _logger.LogDebug("Created resampler for user {UserId}", frame.UserId);
+                    }
+
+                    var inSpan = frame.Samples.Span;
+                    var ratio = (double)_toRate / _fromRate;
+                    var estimatedOutLength = (int)(inSpan.Length * ratio) + 64;
+                    outBuffer = ArrayPool<float>.Shared.Rent(estimatedOutLength);
+
+                    var inputCount =
+                        resampler.ResamplePrepare(inSpan.Length, 1, out var inBuffer, out var inBufferOffset);
+                    inSpan[..inputCount].CopyTo(inBuffer.AsSpan(inBufferOffset));
+
+                    // Return the incoming buffer now that we've copied the data out
+                    if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                        ArrayPool<float>.Shared.Return(seg.Array);
+
                     var outSamples = resampler.ResampleOut(outBuffer, 0, inputCount, outBuffer.Length, 1);
-                    
-                    var resampledFrame = frame with { Samples = outBuffer.AsMemory(0, outSamples) };
-                    
-                    await _output.Writer.WriteAsync(resampledFrame, ct);
+
+                    if (outSamples > 0)
+                    {
+                        await _output.Writer.WriteAsync(
+                            frame with { Samples = outBuffer.AsMemory(0, outSamples) }, ct);
+                        outBuffer = null; // Ownership transferred downstream
+                    }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    _logger.LogError(ex, "Error resampling frame for user {UserId}", frame.UserId);
-                    ArrayPool<float>.Shared.Return(outBuffer);
-                    throw;
+                    if (outBuffer != null)
+                        ArrayPool<float>.Shared.Return(outBuffer);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown
+             // Normal shutdown
         }
         finally
         {
