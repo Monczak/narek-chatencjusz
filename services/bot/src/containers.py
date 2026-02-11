@@ -16,6 +16,7 @@ from services.response import ResponseService
 from services.messaging import CommandListener
 from services.state import StateService
 from services.voice import VoiceService
+from services.voice_keepalive import VoiceKeepaliveService
 from services.util import UtilService
 
 class Container(containers.DeclarativeContainer):
@@ -78,10 +79,16 @@ class Container(containers.DeclarativeContainer):
         VADService
     )
 
+    keepalive_service = providers.Singleton(
+        VoiceKeepaliveService,
+        bot=None  # Will be set after bot creation
+    )
+
     audio_stream_service = providers.Singleton(
         AudioStreamService,
         brain_stub_factory=brain_stub.provider,
-        node_id=node_id
+        node_id=node_id,
+        voice_service=None  # Will be set after voice_service creation
     )
 
     voice_service = providers.Singleton(
@@ -92,7 +99,8 @@ class Container(containers.DeclarativeContainer):
         event_stream=event_stream_service,
         state_service=state_service,
         audio_stream=audio_stream_service,
-        vad_service=vad_service
+        vad_service=vad_service,
+        keepalive_service=keepalive_service
     )
 
     util_cog = providers.Factory(
@@ -135,4 +143,5 @@ class Container(containers.DeclarativeContainer):
         command_listener = command_listener,
         event_stream=event_stream_service,
         audio_stream=audio_stream_service,
+        keepalive_service=keepalive_service,
     )

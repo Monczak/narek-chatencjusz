@@ -10,7 +10,7 @@ public class BrainGrpcService(
     NodeRegistryService nodeRegistry,
     CommandPublisher publisher,
     VoiceSessionService voiceSessionService,
-    UserSpeakingDetector speakingDetector,
+    AudioGraphFactory audioGraphFactory,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -209,42 +209,48 @@ public class BrainGrpcService(
         
         return new VoiceSessionEventAck { Success = true };
     }
-
-    public override async Task StreamAudio(IAsyncStreamReader<UserAudioFrame> requestStream, IServerStreamWriter<AudioFrame> responseStream, ServerCallContext context)
+    
+    public override async Task StreamAudio(
+        IAsyncStreamReader<UserAudioFrame> requestStream,
+        IServerStreamWriter<AudioFrame> responseStream,
+        ServerCallContext context)
     {
-        var nodeId = context.RequestHeaders.GetValue("node_id");
         var sessionId = context.RequestHeaders.GetValue("session_id");
         
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "session_id required in metadata"));
+        }
+        
+        logger.LogInformation("Starting audio stream for session {SessionId}", sessionId);
+        
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-            context.CancellationToken, 
+            context.CancellationToken,
             applicationLifetime.ApplicationStopping
         );
         
-        logger.LogInformation("Accepted audio stream from Node {NodeId} for Session {SessionId}", nodeId, sessionId ?? "unspecified");
-
         try
         {
-            await foreach (var frame in requestStream.ReadAllAsync(cts.Token))
+            // Create audio processing graph for this session
+            var graph = await audioGraphFactory.CreateSessionGraphAsync(
+                sessionId, requestStream, responseStream, cts.Token);
+            
+            await using (graph)
             {
-                var effectiveSessionId = sessionId ?? frame.SessionId;
-                
-                // TODO: Forward frames to the mixer
-                speakingDetector.ProcessFrame(frame, effectiveSessionId);
-                logger.LogDebug("[AudioStream] Session {SessionId} - User {UserId} speaking ({Prob:F1}%)", 
-                    effectiveSessionId, frame.UserId, frame.SpeechProbability * 100);
+                // Run the graph until canceled
+                await graph.RunAsync();
             }
+            
+            logger.LogInformation("Audio stream ended for session {SessionId}", sessionId);
         }
         catch (OperationCanceledException)
         {
-            logger.LogInformation("Audio stream from Node {NodeId} canceled", nodeId);
+            logger.LogInformation("Audio stream cancelled for session {SessionId}", sessionId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error reading audio stream from Node {NodeId}", nodeId);
-        }
-        finally
-        {
-            logger.LogInformation("Audio stream from Node {NodeId} finished", nodeId);
+            logger.LogError(ex, "Error in audio stream for session {SessionId}", sessionId);
+            throw;
         }
     }
 }

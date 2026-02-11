@@ -10,6 +10,7 @@ from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
+from services.voice_keepalive import VoiceKeepaliveService
 
 class VoiceService:
     def __init__(
@@ -20,7 +21,8 @@ class VoiceService:
         event_stream: EventStreamService,
         state_service: StateService,
         audio_stream: AudioStreamService,
-        vad_service: VADService
+        vad_service: VADService,
+        keepalive_service: VoiceKeepaliveService
     ) -> None:
         self.brain = brain_stub
         self.response = response_service
@@ -29,8 +31,9 @@ class VoiceService:
         self.state = state_service
         self.audio_stream = audio_stream
         self.vad = vad_service
+        self.keepalive = keepalive_service
 
-        self.bot: discord.Bot | None = None # Injected later
+        self.bot: discord.Bot | None = None  # Injected later
 
         try:
             self.vad.load_model()
@@ -119,10 +122,13 @@ class VoiceService:
 
             await channel_to_join.connect()
 
+            if session_id:
+                await self.audio_stream.start_session(session_id, guild_ctx.id)
+
             if guild.voice_client:
                 if not guild.voice_client.recording:
                     guild.voice_client.start_recording(
-                        GrpcVadAudioSink(guild, self.audio_stream, self.vad, self.state),
+                        GrpcVadAudioSink(guild, self.audio_stream, self.state),
                         self._recording_finished_callback
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")
@@ -155,6 +161,10 @@ class VoiceService:
         
         # Register a DISCONNECT intent so StateManager doesn't freak out when we leave
         self.state.register_intent(guild.id, VoiceTransitionType.DISCONNECT)
+
+        session_id = self.state.get_session_id(guild.id)
+        if session_id:
+            await self.audio_stream.stop_session(session_id)
 
         # Aggressively kill the Discord connection
         if guild.voice_client:
@@ -195,6 +205,9 @@ class VoiceService:
             if not guild:
                 raise ValueError(f"Guild {guild_ctx.id} does not exist")
             
+            if session_id:
+                await self.audio_stream.stop_session(session_id)
+            
             if guild.voice_client:
                 if guild.voice_client.recording:
                     guild.voice_client.stop_recording()
@@ -214,6 +227,23 @@ class VoiceService:
         except Exception:
             self.state.consume_intent(guild_ctx.id)
             raise
+
+    async def send_audio_to_guild(self, guild_id: int, pcm_data: bytes):
+        if not self.bot:
+            return
+        
+        guild = self.bot.get_guild(guild_id)
+        if not guild or not guild.voice_client:
+            return
+        
+        vc = guild.voice_client
+        if vc.is_connected():
+            try:
+                vc.send_audio_packet(pcm_data, encode=False)
+                
+                self.keepalive.mark_audio_sent(guild_id)
+            except Exception as e:
+                logging.warning(f"Failed to send audio to guild {guild_id}: {e}")
 
     async def _recording_finished_callback(self, sink, *args):
         logging.info("Recording finished")

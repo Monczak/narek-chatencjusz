@@ -8,6 +8,7 @@ from services.audio_stream import AudioStreamService
 from services.event_stream import EventStreamService
 from services.messaging import CommandListener
 from services.voice import VoiceService
+from services.voice_keepalive import VoiceKeepaliveService
 
 class NarekChatencjuszBot(discord.Bot):
     def __init__(
@@ -22,7 +23,8 @@ class NarekChatencjuszBot(discord.Bot):
         voice_service: VoiceService,
         command_listener: CommandListener,
         event_stream: EventStreamService,
-        audio_stream: AudioStreamService
+        audio_stream: AudioStreamService,
+        keepalive_service: VoiceKeepaliveService
     ):
         intents = discord.Intents.default()
         intents.members = True
@@ -44,6 +46,7 @@ class NarekChatencjuszBot(discord.Bot):
         self.command_listener = command_listener
         self.event_stream = event_stream
         self.audio_stream = audio_stream
+        self.keepalive_service = keepalive_service
 
     async def setup_cogs(self):
         logging.info("Loading cogs...")
@@ -67,10 +70,16 @@ class NarekChatencjuszBot(discord.Bot):
         await self.audio_stream.start()
         logging.info("AudioStreamService started")
 
+        await self.keepalive_service.start()
+        logging.info("VoiceKeepaliveService started")
+
         logging.info(f"Narek Chatencjusz bot service is up and running")
 
     async def close(self):
         logging.info(f"Gracefully shutting down -- cleaning up voice connections...")
+
+        if self.keepalive_service:
+            await self.keepalive_service.stop()
 
         if self.event_stream:
             await self.event_stream.stop()
@@ -103,4 +112,3 @@ class NarekChatencjuszBot(discord.Bot):
             logging.error(f"Error during graceful shutdown: {e}")
         
         await super().close()
-

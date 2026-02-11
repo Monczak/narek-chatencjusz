@@ -19,15 +19,18 @@ builder.Services.AddSingleton<IDistributedLockFactory>(sp => RedLockFactory.Crea
 builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
 
+builder.Services.AddHttpClient();
+
+builder.Services.AddSingleton<SileroVadModelService>();
+builder.Services.AddSingleton<AudioGraphFactory>();
+
 builder.Services.AddSingleton<BrainConfigService>();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 builder.Services.AddSingleton<CommandPublisher>();
-builder.Services.AddSingleton<UserSpeakingDetector>();
 builder.Services.AddSingleton<VoiceSessionService>();
 
 builder.Services.AddHostedService<StaleConnectionClearer>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<UserSpeakingDetector>());
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -40,6 +43,9 @@ signalR.AddStackExchangeRedis(valkeyUrl, options =>
 });
 
 var app = builder.Build();
+
+var vadModelService = app.Services.GetRequiredService<SileroVadModelService>();
+await vadModelService.EnsureModelAsync();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

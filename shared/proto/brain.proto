@@ -180,7 +180,6 @@ message UserAudioFrame {
   uint64 user_id = 3;
   bytes pcm_data = 4;
   int64 timestamp = 5;
-  float speech_probability = 6;
 }
 
 message AudioFrame {

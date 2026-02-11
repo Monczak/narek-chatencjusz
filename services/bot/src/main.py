@@ -1,5 +1,4 @@
 import asyncio
-import struct
 import uuid
 import os
 import logging
@@ -38,7 +37,16 @@ async def run_bot():
         container.init_resources()
 
     try:
-        bot: NarekChatencjuszBot = await container.bot() # type: ignore (container is now in async mode)
+        # Get services that need circular dependency injection
+        bot: NarekChatencjuszBot = await container.bot() # type: ignore
+        keepalive_service = await container.keepalive_service() # type: ignore
+        audio_stream_service = await container.audio_stream_service() # type: ignore
+        voice_service = await container.voice_service() # type: ignore
+        
+        keepalive_service.bot = bot
+        
+        audio_stream_service.voice = voice_service
+        
         token = container.config.discord_bot_token()
 
         await bot.setup_cogs()
