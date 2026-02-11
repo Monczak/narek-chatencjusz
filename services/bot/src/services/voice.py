@@ -120,6 +120,7 @@ class VoiceService:
 
             await asyncio.sleep(0.5)
 
+            self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
             await channel_to_join.connect()
 
             if session_id:
@@ -133,7 +134,6 @@ class VoiceService:
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")
 
-            self.event_stream.push_session_state_update(guild, brain_pb2.SessionUpdate.ChangeType.STARTED, channel_to_join)
 
             self.event_stream.push_channel_snapshot(
                 guild=guild,
@@ -239,7 +239,7 @@ class VoiceService:
         vc = guild.voice_client
         if vc.is_connected():
             try:
-                vc.send_audio_packet(pcm_data, encode=False)
+                vc.send_audio_packet(pcm_data, encode=True)
                 
                 self.keepalive.mark_audio_sent(guild_id)
             except Exception as e:

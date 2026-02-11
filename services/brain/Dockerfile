@@ -1,6 +1,10 @@
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
+USER root
+RUN apt-get update && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
+USER $APP_UID
+
 WORKDIR /src
 
 COPY services/brain/BrainService.csproj services/brain/

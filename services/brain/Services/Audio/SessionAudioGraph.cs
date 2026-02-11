@@ -112,6 +112,15 @@ public class SessionAudioGraph : IAsyncDisposable
             _nodeTasks.Add(Task.Run(() => _mixer.StartAsync(ct), ct));
             _nodeTasks.Add(Task.Run(() => _botSink.StartAsync(ct), ct));
             
+            _nodeTasks.Add(Task.Run(async () => 
+            {
+                await foreach (var frame in _vadGate.Output.ReadAllAsync(ct))
+                {
+                    // Discard the frame (Acts as a black hole sink)
+                    // TODO: Route the frame to ASR once it's ready
+                }
+            }, ct));
+            
             // Wait for all nodes to complete
             await Task.WhenAll(_nodeTasks);
             

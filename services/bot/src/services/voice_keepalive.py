@@ -58,9 +58,9 @@ class VoiceKeepaliveService:
                     # If we haven't sent audio in KEEPALIVE_INTERVAL seconds, send silence
                     if now - last_sent > KEEPALIVE_INTERVAL:
                         try:
-                            vc.send_audio_packet(SILENCE_FRAME, encode=False)
+                            vc.send_audio_packet(SILENCE_FRAME, encode=True)
                             self._last_sent[guild_id] = now
-                            logging.debug(f"Sent keepalive silence to guild {guild_id}")
+                            logging.warning(f"Sent keepalive silence to guild {guild_id}")
                         except Exception as e:
                             logging.warning(f"Failed to send keepalive to guild {guild_id}: {e}")
                 

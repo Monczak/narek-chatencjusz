@@ -20,7 +20,7 @@ class GrpcVadAudioSink(Sink):
         data = data[-CHUNK_SIZE:]
         
         session_id = self.state.get_session_id(self.guild.id)
-        self.audio.push_audio(self.guild.id, user, data, session_id)
+        self.audio.push_audio(session_id, user, data)
 
     def cleanup(self):
         return super().cleanup()

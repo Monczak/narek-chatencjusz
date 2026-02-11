@@ -39,8 +39,8 @@ async def run_bot():
     try:
         # Get services that need circular dependency injection
         bot: NarekChatencjuszBot = await container.bot() # type: ignore
-        keepalive_service = await container.keepalive_service() # type: ignore
-        audio_stream_service = await container.audio_stream_service() # type: ignore
+        keepalive_service = container.keepalive_service() # type: ignore
+        audio_stream_service = container.audio_stream_service() # type: ignore
         voice_service = await container.voice_service() # type: ignore
         
         keepalive_service.bot = bot

@@ -29,4 +29,12 @@
     <Protobuf Include="$(ProtoBaseDir)/brain.proto" GrpcServices="Server" Link="Proto/brain.proto"/>
   </ItemGroup>
 
+  <Target Name="FixOnnxRuntimeLinuxBug" AfterTargets="Build;Publish" Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <ItemGroup>
+      <OnnxSoFile Include="$(OutDir)runtimes\linux-x64\native\libonnxruntime.so" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(OnnxSoFile)" DestinationFiles="$(OutDir)onnxruntime.dll" />
+    <Copy SourceFiles="@(OnnxSoFile)" DestinationFolder="$(OutDir)" />
+  </Target>
 </Project>

@@ -28,6 +28,7 @@ public class ResamplerNode : IAudioNode
         _logger = logger;
         
         _resampler = new WdlResampler();
+        _resampler.SetFeedMode(true);
         _resampler.SetRates(fromRate, toRate);
         
         _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4)
@@ -47,16 +48,15 @@ public class ResamplerNode : IAudioNode
             {
                 var inSamples = frame.Samples.ToArray();
                 
-                // Calculate output size based on ratio
                 var ratio = (double)_toRate / _fromRate;
-                var outLength = (int)(inSamples.Length * ratio);
-                var outBuffer = ArrayPool<float>.Shared.Rent(outLength + 64); // Extra space for safety
+                var estimatedOutLength = (int)(inSamples.Length * ratio) + 64; 
+                var outBuffer = ArrayPool<float>.Shared.Rent(estimatedOutLength); 
                 
                 try
                 {
                     var inputCount = _resampler.ResamplePrepare(inSamples.Length, 1, out var inBuffer, out var inBufferOffset);
                     Array.Copy(inSamples, 0, inBuffer, inBufferOffset, inputCount);
-                    var outSamples = _resampler.ResampleOut(outBuffer, 0, inputCount, outLength, 1);
+                    var outSamples = _resampler.ResampleOut(outBuffer, 0, inputCount, outBuffer.Length, 1);
                     
                     var resampledFrame = frame with { Samples = outBuffer.AsMemory(0, outSamples) };
                     

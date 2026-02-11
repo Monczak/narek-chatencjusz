@@ -3,9 +3,10 @@ import logging
 import time
 from typing import Dict, Optional
 from generated import brain_pb2, brain_pb2_grpc
+from services.voice import VoiceService
 
 class SessionAudioStream:
-    def __init__(self, session_id: str, guild_id: int, brain_stub: brain_pb2_grpc.BrainStub, voice_service):
+    def __init__(self, session_id: str, guild_id: int, brain_stub: brain_pb2_grpc.BrainStub, voice_service: VoiceService):
         self.session_id = session_id
         self.guild_id = guild_id
         self.brain = brain_stub
@@ -83,8 +84,6 @@ class SessionAudioStream:
 
 
 class AudioStreamService:
-    """Manages multiple per-session audio streams"""
-    
     def __init__(self, brain_stub_factory, node_id: str, voice_service):
         self.brain_stub_factory = brain_stub_factory
         self.node_id = node_id
@@ -93,12 +92,10 @@ class AudioStreamService:
         self.brain_stub: Optional[brain_pb2_grpc.BrainStub] = None
     
     async def start(self):
-        """Initialize the service and brain stub"""
         self.brain_stub = await self.brain_stub_factory()
         logging.info("AudioStreamService initialized")
     
     async def start_session(self, session_id: str, guild_id: int):
-        """Start audio streaming for a session"""
         if session_id in self._sessions:
             logging.warning(f"Audio stream for session {session_id} already exists")
             return
@@ -113,19 +110,16 @@ class AudioStreamService:
         logging.info(f"Started audio stream for session {session_id}")
     
     async def stop_session(self, session_id: str):
-        """Stop audio streaming for a session"""
         if session_id in self._sessions:
             await self._sessions[session_id].stop()
             del self._sessions[session_id]
             logging.info(f"Stopped audio stream for session {session_id}")
     
-    def push_audio(self, guild_id: int, user_id: int, pcm_data: bytes, session_id: str | None):
-        """Push audio to the appropriate session stream"""
+    def push_audio(self, session_id: str | None, user_id: int, pcm_data: bytes):
         if session_id and session_id in self._sessions:
             self._sessions[session_id].push_audio(user_id, pcm_data)
     
     async def stop(self):
-        """Stop all active audio streams"""
         logging.info(f"Stopping all audio streams ({len(self._sessions)} active)")
         for session_id in list(self._sessions.keys()):
             await self.stop_session(session_id)
