@@ -25,51 +25,46 @@ public class BotSinkNode(
     
     // 48kHz stereo, 20ms frames
     private const int FrameSize = 960 * 2; // 1920 samples
-    private const int FrameIntervalMs = 20;
 
     public async Task StartAsync(CancellationToken ct)
     {
         logger.LogInformation("BotSinkNode started for guild {GuildId}", guildId);
         
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(FrameIntervalMs));
         var pcmBuffer = ArrayPool<byte>.Shared.Rent(FrameSize * 2); // 2 bytes per sample
 
         const double smoothingFactor = 0.1;
         
         try
         {
-            while (await timer.WaitForNextTickAsync(ct))
+            // Pull frame from upstream (mixer)
+            while (await _input.WaitToReadAsync(ct))
             {
-                // Pull frame from upstream (mixer)
-                if (await _input.WaitToReadAsync(ct))
+                if (_input.TryRead(out var frame))
                 {
-                    if (_input.TryRead(out var frame))
+                    var currentLatency = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
+                    if (AverageLatencyMs == 0)
                     {
-                        var currentLatency = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
-                        if (AverageLatencyMs == 0)
-                        {
-                            AverageLatencyMs = currentLatency;
-                        }
-                        else
-                        {
-                            AverageLatencyMs = AverageLatencyMs * (1 - smoothingFactor) +
-                                               currentLatency * smoothingFactor;
-                        }
-                        // Convert float32 to int16 PCM
-                        ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
-                        
-                        var grpcFrame = new Proto.AudioFrame
-                        {
-                            GuildId = guildId,
-                            PcmData = ByteString.CopyFrom(pcmBuffer, 0, FrameSize * 2)
-                        };
-                        
-                        await _grpcOutput.WriteAsync(grpcFrame, ct);
-                        
-                        if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
-                        {
-                            ArrayPool<float>.Shared.Return(segment.Array);
-                        }
+                        AverageLatencyMs = currentLatency;
+                    }
+                    else
+                    {
+                        AverageLatencyMs = AverageLatencyMs * (1 - smoothingFactor) +
+                                           currentLatency * smoothingFactor;
+                    }
+                    // Convert float32 to int16 PCM
+                    ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
+                    
+                    var grpcFrame = new Proto.AudioFrame
+                    {
+                        GuildId = guildId,
+                        PcmData = ByteString.CopyFrom(pcmBuffer, 0, FrameSize * 2)
+                    };
+                    
+                    await _grpcOutput.WriteAsync(grpcFrame, ct);
+                    
+                    if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
+                    {
+                        ArrayPool<float>.Shared.Return(segment.Array);
                     }
                 }
             }

@@ -105,7 +105,7 @@ public class SessionAudioGraph : IAsyncDisposable
         );
         
         _demuxer = new UserDemuxerNode(
-            _testMonoToStereo.Output,
+            _botSource.Output,
             onNewUserStream: (userId, stream) => 
             {
                 _mixer.AddInput($"echo_user_{userId}", stream);
@@ -115,7 +115,7 @@ public class SessionAudioGraph : IAsyncDisposable
         
         // Bot Sink: Converts float32 to int16 PCM, streams to bot at 20ms intervals
         _botSink = new BotSinkNode(
-            _mixer.Output,
+            _demuxer.Output,
             botOutputStream,
             guildId,
             loggerFactory.CreateLogger<BotSinkNode>()

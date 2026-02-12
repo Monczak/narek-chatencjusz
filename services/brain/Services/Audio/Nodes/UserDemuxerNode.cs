@@ -41,7 +41,9 @@ public class UserDemuxerNode : IAudioNode
                     // Create a dedicated stream for this user
                     channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4)
                     {
-                        FullMode = BoundedChannelFullMode.DropOldest
+                        FullMode = BoundedChannelFullMode.DropOldest,
+                        SingleReader = true,
+                        SingleWriter = true
                     });
                     
                     _userChannels[frame.UserId] = channel;

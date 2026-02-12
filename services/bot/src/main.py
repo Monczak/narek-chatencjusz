@@ -8,7 +8,7 @@ import discord.opus
 from containers import Container
 from bot import NarekChatencjuszBot
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # Monkey-patch advertised encryption modes - prevents a regression 
 # causing Opus decode errors with audio from other users

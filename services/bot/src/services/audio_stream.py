@@ -15,7 +15,7 @@ class SessionAudioStream:
         self._stop_event = asyncio.Event()
         self._stream_task: Optional[asyncio.Task] = None
         
-        self._output_queue = asyncio.Queue(maxsize=50) # Max 1 second buffer to prevent runaway latency
+        self._output_queue = asyncio.Queue(maxsize=50) # Max 1 s buffer to prevent runaway latency
         self._playback_task: Optional[asyncio.Task] = None
         
         logging.info(f"Created SessionAudioStream for session {session_id}, guild {guild_id}")
@@ -67,46 +67,45 @@ class SessionAudioStream:
                 
     async def _playback_loop(self):
         FRAME_DURATION = 0.02  # 20ms frames
-        PREBUFFER_FRAMES = 5   # Wait for 100ms of audio to absorb network jitter before playing
         
-        buffering = True
-        next_frame_time = 0.0
+        # Pre-generated silence frame (1920 samples * 2 channels * 2 bytes = 3840 bytes)
+        SILENCE_FRAME = b'\x00' * 3840 
+        
+        next_frame_time = time.perf_counter() + FRAME_DURATION
         
         while not self._stop_event.is_set():
             try:
-                if buffering:
-                    if self._output_queue.qsize() < PREBUFFER_FRAMES:
-                        await asyncio.sleep(0.01)
-                        continue
-                    else:
-                        buffering = False
-                        next_frame_time = time.perf_counter() + FRAME_DURATION
-
+                # 1. Try to get a frame without blocking
                 try:
                     pcm_data = self._output_queue.get_nowait()
                     await self.voice.send_audio_to_guild(self.guild_id, pcm_data)
                 except asyncio.QueueEmpty:
-                    logging.debug(f"Jitter buffer underrun for session {self.session_id}, re-buffering...")
-                    buffering = True
-                    continue
+                    # [CHANGE] Underrun concealment: Send silence instead of stopping to re-buffer.
+                    # This maintains the heartbeat and prevents stuttering.
+                    await self.voice.send_audio_to_guild(self.guild_id, SILENCE_FRAME)
                 
+                # 2. Sleep logic
                 now = time.perf_counter()
                 sleep_time = next_frame_time - now
                 
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                     
-                # Advance our absolute target time for the next loop
                 next_frame_time += FRAME_DURATION
                 
-                # If the CPU/loop stalled heavily (e.g., GC pause), reset the timeline so we don't speed-up 
+                # 3. Drift/Lag Reset
+                # If we fell behind by more than 100ms (GC pause, CPU spike), skip ahead.
                 if now > next_frame_time + 0.1:
+                    logging.warning(f"Playback lag detected ({now - next_frame_time:.3f}s). Resetting clock.")
                     next_frame_time = now + FRAME_DURATION
+                    # clear old frames to snap to real-time
+                    while not self._output_queue.empty():
+                         self._output_queue.get_nowait()
                     
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logging.error(f"Error in jitter buffer playback loop: {e}")
+                logging.error(f"Error in playback loop: {e}")
                 await asyncio.sleep(0.02)
     
     async def _run(self):
