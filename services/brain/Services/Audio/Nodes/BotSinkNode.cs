@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
@@ -29,43 +30,44 @@ public class BotSinkNode(
     public async Task StartAsync(CancellationToken ct)
     {
         logger.LogInformation("BotSinkNode started for guild {GuildId}", guildId);
-        
-        var pcmBuffer = ArrayPool<byte>.Shared.Rent(FrameSize * 2); // 2 bytes per sample
-
+        var pcmBuffer = ArrayPool<byte>.Shared.Rent(FrameSize * 2);
         const double smoothingFactor = 0.1;
-        
+        const int writeTimeoutMs = 40; // 2 frames — if exceeded, drop
+
         try
         {
-            // Pull frame from upstream (mixer)
             while (await _input.WaitToReadAsync(ct))
             {
-                if (_input.TryRead(out var frame))
+                if (!_input.TryRead(out var frame)) continue;
+
+                var currentLatency = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
+                AverageLatencyMs = AverageLatencyMs == 0
+                    ? currentLatency
+                    : AverageLatencyMs * (1 - smoothingFactor) + currentLatency * smoothingFactor;
+
+                ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
+
+                if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
+                    ArrayPool<float>.Shared.Return(segment.Array);
+
+                var grpcFrame = new Proto.AudioFrame
                 {
-                    var currentLatency = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
-                    if (AverageLatencyMs == 0)
-                    {
-                        AverageLatencyMs = currentLatency;
-                    }
-                    else
-                    {
-                        AverageLatencyMs = AverageLatencyMs * (1 - smoothingFactor) +
-                                           currentLatency * smoothingFactor;
-                    }
-                    // Convert float32 to int16 PCM
-                    ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
-                    
-                    var grpcFrame = new Proto.AudioFrame
-                    {
-                        GuildId = guildId,
-                        PcmData = ByteString.CopyFrom(pcmBuffer, 0, FrameSize * 2)
-                    };
-                    
-                    await _grpcOutput.WriteAsync(grpcFrame, ct);
-                    
-                    if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
-                    {
-                        ArrayPool<float>.Shared.Return(segment.Array);
-                    }
+                    GuildId = guildId,
+                    PcmData = ByteString.CopyFrom(pcmBuffer, 0, FrameSize * 2)
+                };
+
+                using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                writeCts.CancelAfter(writeTimeoutMs);
+
+                try
+                {
+                    await _grpcOutput.WriteAsync(grpcFrame, writeCts.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Write timed out — Python is backed up. Drop the frame and continue.
+                    // The mixer's DropOldest mode already handles upstream buffering.
+                    logger.LogWarning("BotSinkNode: frame dropped (write timeout >40ms), guild {GuildId}", guildId);
                 }
             }
         }

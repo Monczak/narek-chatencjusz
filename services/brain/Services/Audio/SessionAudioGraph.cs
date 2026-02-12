@@ -56,30 +56,30 @@ public class SessionAudioGraph : IAsyncDisposable
         );
         
         // Convert stereo to mono for VAD
-        _stereoToMono = new ChannelConverterNode(
-            _botSource.Output,
-            monoToStereo: false,
-            loggerFactory.CreateLogger<ChannelConverterNode>()
-        );
-        
-        // Resampler: 48kHz mono -> 16kHz mono for VAD
-        _resampler48To16 = new ResamplerNode(
-            _stereoToMono.Output,
-            fromRate: 48000,
-            toRate: 16000,
-            loggerFactory.CreateLogger<ResamplerNode>()
-        );
-        
-        // VAD Gate: Silero VAD with hysteresis, only passes speaking frames
-        _vadGate = new VadGateNode(
-            _resampler48To16.Output,
-            sessionService,
-            configService,
-            vadModelService,
-            sessionId,
-            guildId,
-            loggerFactory.CreateLogger<VadGateNode>()
-        );
+        // _stereoToMono = new ChannelConverterNode(
+        //     _botSource.Output,
+        //     monoToStereo: false,
+        //     loggerFactory.CreateLogger<ChannelConverterNode>()
+        // );
+        //
+        // // Resampler: 48kHz mono -> 16kHz mono for VAD
+        // _resampler48To16 = new ResamplerNode(
+        //     _stereoToMono.Output,
+        //     fromRate: 48000,
+        //     toRate: 16000,
+        //     loggerFactory.CreateLogger<ResamplerNode>()
+        // );
+        //
+        // // VAD Gate: Silero VAD with hysteresis, only passes speaking frames
+        // _vadGate = new VadGateNode(
+        //     _resampler48To16.Output,
+        //     sessionService,
+        //     configService,
+        //     vadModelService,
+        //     sessionId,
+        //     guildId,
+        //     loggerFactory.CreateLogger<VadGateNode>()
+        // );
         
         // Mixer: Combines multiple audio sources
         // Currently produces silence as no sources are connected
@@ -91,18 +91,18 @@ public class SessionAudioGraph : IAsyncDisposable
         // _mixer.AddInput("tts", monoToStereo.Output);
         
         // --- TEST DSP ROUTING ---
-        _testResampler16To48 = new ResamplerNode(
-            _vadGate.Output,
-            fromRate: 16000,
-            toRate: 48000,
-            loggerFactory.CreateLogger<ResamplerNode>()
-        );
-
-        _testMonoToStereo = new ChannelConverterNode(
-            _testResampler16To48.Output,
-            monoToStereo: true,
-            loggerFactory.CreateLogger<ChannelConverterNode>()
-        );
+        // _testResampler16To48 = new ResamplerNode(
+        //     _vadGate.Output,
+        //     fromRate: 16000,
+        //     toRate: 48000,
+        //     loggerFactory.CreateLogger<ResamplerNode>()
+        // );
+        //
+        // _testMonoToStereo = new ChannelConverterNode(
+        //     _testResampler16To48.Output,
+        //     monoToStereo: true,
+        //     loggerFactory.CreateLogger<ChannelConverterNode>()
+        // );
         
         _demuxer = new UserDemuxerNode(
             _botSource.Output,
@@ -115,7 +115,7 @@ public class SessionAudioGraph : IAsyncDisposable
         
         // Bot Sink: Converts float32 to int16 PCM, streams to bot at 20ms intervals
         _botSink = new BotSinkNode(
-            _demuxer.Output,
+            _mixer.Output,
             botOutputStream,
             guildId,
             loggerFactory.CreateLogger<BotSinkNode>()
@@ -124,11 +124,11 @@ public class SessionAudioGraph : IAsyncDisposable
         // Register nodes for monitoring (BotSink has no meaningful Output; skip it)
         _monitoredNodes.AddRange([
             new NamedNode("BotSource",         _botSource),
-            new NamedNode("StereoToMono",      _stereoToMono),
-            new NamedNode("Resampler48to16",   _resampler48To16),
-            new NamedNode("VadGate",           _vadGate),
-            new NamedNode("EchoResampler",     _testResampler16To48),
-            new NamedNode("EchoMonoToStereo",  _testMonoToStereo),
+            // new NamedNode("StereoToMono",      _stereoToMono),
+            // new NamedNode("Resampler48to16",   _resampler48To16),
+            // new NamedNode("VadGate",           _vadGate),
+            // new NamedNode("EchoResampler",     _testResampler16To48),
+            // new NamedNode("EchoMonoToStereo",  _testMonoToStereo),
             new NamedNode("Demuxer",           _demuxer),
             new NamedNode("Mixer",             _mixer),
         ]);
@@ -159,17 +159,19 @@ public class SessionAudioGraph : IAsyncDisposable
             }, ct);
             
             _nodeTasks.Add(botSourceTask);
-            _nodeTasks.Add(Task.Run(() => _stereoToMono.StartAsync(ct), ct));
-            _nodeTasks.Add(Task.Run(() => _resampler48To16.StartAsync(ct), ct));
-            _nodeTasks.Add(Task.Run(() => _vadGate.StartAsync(ct), ct));
+            
+            // _nodeTasks.Add(Task.Run(() => _stereoToMono.StartAsync(ct), ct));
+            // _nodeTasks.Add(Task.Run(() => _resampler48To16.StartAsync(ct), ct));
+            // _nodeTasks.Add(Task.Run(() => _vadGate.StartAsync(ct), ct));
             
             // --- TEST DSP ROUTING ---
-            _nodeTasks.Add(Task.Run(() => _testResampler16To48.StartAsync(ct), ct));
-            _nodeTasks.Add(Task.Run(() => _testMonoToStereo.StartAsync(ct), ct));
+            // _nodeTasks.Add(Task.Run(() => _testResampler16To48.StartAsync(ct), ct));
+            // _nodeTasks.Add(Task.Run(() => _testMonoToStereo.StartAsync(ct), ct));
             _nodeTasks.Add(Task.Run(() => _demuxer.StartAsync(ct), ct));
             // ------------------------
             
-            _nodeTasks.Add(Task.Run(() => _mixer.StartAsync(ct), ct));
+            _nodeTasks.Add(RunOnDedicatedThread(_mixer.StartAsync, ct, $"mixer-{_sessionId}"));
+            
             _nodeTasks.Add(Task.Run(() => _botSink.StartAsync(ct), ct));
             
             // Start DSP metrics push to dashboard
@@ -189,6 +191,32 @@ public class SessionAudioGraph : IAsyncDisposable
             _logger.LogError(ex, "Audio graph error for session {SessionId}", _sessionId);
             throw;
         }
+    }
+    
+    private static Task RunOnDedicatedThread(
+        Func<CancellationToken, Task> work,
+        CancellationToken ct,
+        string name,
+        ThreadPriority priority = ThreadPriority.AboveNormal)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                work(ct).GetAwaiter().GetResult();
+                tcs.SetResult();
+            }
+            catch (OperationCanceledException) { tcs.SetResult(); }
+            catch (Exception ex) { tcs.SetException(ex); }
+        })
+        {
+            IsBackground = true,
+            Priority = priority,
+            Name = name
+        };
+        thread.Start();
+        return tcs.Task;
     }
     
     private async Task MetricsLoopAsync(CancellationToken ct)

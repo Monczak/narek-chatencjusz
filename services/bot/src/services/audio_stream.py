@@ -66,42 +66,63 @@ class SessionAudioStream:
                 break
                 
     async def _playback_loop(self):
-        FRAME_DURATION = 0.02  # 20ms frames
-        
-        # Pre-generated silence frame (1920 samples * 2 channels * 2 bytes = 3840 bytes)
-        SILENCE_FRAME = b'\x00' * 3840 
-        
+        FRAME_DURATION = 0.02
+        SILENCE_FRAME = b'\x00' * 3840
+        HIGH_WATER_FRAMES = 10   # ~200ms — above this we're accumulating latency
+        TARGET_DEPTH_FRAMES = 2  # drain to ~40ms of buffer
+
         next_frame_time = time.perf_counter() + FRAME_DURATION
-        
+
+        long_dropout_time = time.time()
+        long_dropout_mode = False
+        prev_long_dropout_mode = False
+
         while not self._stop_event.is_set():
             try:
-                # 1. Try to get a frame without blocking
+                # If the queue is deep, we've accumulated latency — drain it
+                depth = self._output_queue.qsize()
+                if depth > HIGH_WATER_FRAMES:
+                    drained = 0
+                    while self._output_queue.qsize() > TARGET_DEPTH_FRAMES:
+                        try:
+                            self._output_queue.get_nowait()
+                            drained += 1
+                        except asyncio.QueueEmpty:
+                            break
+                    logging.warning(
+                        f"Output queue was {depth} frames deep — drained {drained} frames to reduce latency"
+                    )
+
                 try:
                     pcm_data = self._output_queue.get_nowait()
                     await self.voice.send_audio_to_guild(self.guild_id, pcm_data)
+                    long_dropout_mode = False
                 except asyncio.QueueEmpty:
-                    # [CHANGE] Underrun concealment: Send silence instead of stopping to re-buffer.
-                    # This maintains the heartbeat and prevents stuttering.
                     await self.voice.send_audio_to_guild(self.guild_id, SILENCE_FRAME)
-                
-                # 2. Sleep logic
+                    # logging.debug("Sending silence because queue was empty - long dropout?")
+                    long_dropout_mode = True
+
+                if long_dropout_mode and not prev_long_dropout_mode:
+                    logging.warning(f"LONG DROPOUT STARTED - {time.time()} (delta {time.time() - long_dropout_time})")
+                    long_dropout_time = time.time()
+                elif not long_dropout_mode and prev_long_dropout_mode:
+                    logging.warning(f"LONG DROPOUT STOPPED - {time.time()} (delta {time.time() - long_dropout_time})")
+                    long_dropout_time = time.time()
+                prev_long_dropout_mode = long_dropout_mode
+
                 now = time.perf_counter()
                 sleep_time = next_frame_time - now
-                
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
-                    
+
                 next_frame_time += FRAME_DURATION
-                
-                # 3. Drift/Lag Reset
-                # If we fell behind by more than 100ms (GC pause, CPU spike), skip ahead.
+
                 if now > next_frame_time + 0.1:
-                    logging.warning(f"Playback lag detected ({now - next_frame_time:.3f}s). Resetting clock.")
+                    logging.warning(f"Playback lag detected. Resetting clock.")
                     next_frame_time = now + FRAME_DURATION
-                    # clear old frames to snap to real-time
                     while not self._output_queue.empty():
-                         self._output_queue.get_nowait()
-                    
+                        self._output_queue.get_nowait()
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
