@@ -67,7 +67,9 @@ public class ResamplerNode : IAudioNode
 
                     // Return the incoming buffer now that we've copied the data out
                     if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                    {
                         ArrayPool<float>.Shared.Return(seg.Array);
+                    }
 
                     var outSamples = resampler.ResampleOut(outBuffer, 0, inputCount, outBuffer.Length, 1);
 

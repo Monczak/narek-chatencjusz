@@ -49,7 +49,7 @@ public class ChannelConverterNode : IAudioNode
                         outLength = inSamples.Length * 2;
                         outBuffer = ArrayPool<float>.Shared.Rent(outLength);
 
-                        for (int i = 0; i < inSamples.Length; i++)
+                        for (var i = 0; i < inSamples.Length; i++)
                         {
                             outBuffer[i * 2] = inSamples[i]; // L
                             outBuffer[i * 2 + 1] = inSamples[i]; // R
@@ -69,7 +69,7 @@ public class ChannelConverterNode : IAudioNode
                         outLength = inSamples.Length / 2;
                         outBuffer = ArrayPool<float>.Shared.Rent(outLength);
 
-                        for (int i = 0; i < outLength; i++)
+                        for (var i = 0; i < outLength; i++)
                         {
                             outBuffer[i] = (inSamples[i * 2] + inSamples[i * 2 + 1]) * 0.5f;
                         }

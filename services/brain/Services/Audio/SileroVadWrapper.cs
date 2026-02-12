@@ -3,7 +3,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace BrainService.Services.Audio;
 
-public class SileroVadNode : IDisposable
+public class SileroVadWrapper : IDisposable
 {
     private readonly InferenceSession _session;
     
@@ -19,13 +19,13 @@ public class SileroVadNode : IDisposable
     private const int ContextSize16k = 64;
     // ReSharper restore InconsistentNaming
     
-    public SileroVadNode(InferenceSession session)
+    public SileroVadWrapper(InferenceSession session)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         ResetStates();
     }
-    
-    public void ResetStates()
+
+    private void ResetStates()
     {
         _state = new float[256];
         _context = [];
@@ -53,7 +53,7 @@ public class SileroVadNode : IDisposable
         if (_context.Length == 0)
         {
             _context = new float[batchSize][];
-            for (int i = 0; i < batchSize; i++)
+            for (var i = 0; i < batchSize; i++)
             {
                 _context[i] = new float[ContextSize16k];
             }
@@ -65,8 +65,8 @@ public class SileroVadNode : IDisposable
         audio16kHz.CopyTo(inputWithContext.AsSpan(ContextSize16k));
         
         var inputTensor = new DenseTensor<float>(inputWithContext, new[] { 1, inputWithContext.Length });
-        var srTensor = new DenseTensor<long>(new[] { (long)SampleRate16k }, new[] { 1 });
-        var stateTensor = new DenseTensor<float>(_state, new[] { 2, 1, 128 });
+        var srTensor = new DenseTensor<long>(new[] { (long)SampleRate16k }, [1]);
+        var stateTensor = new DenseTensor<float>(_state, [2, 1, 128]);
         
         var inputs = new List<NamedOnnxValue>
         {
@@ -107,5 +107,6 @@ public class SileroVadNode : IDisposable
     public void Dispose()
     {
         _session.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

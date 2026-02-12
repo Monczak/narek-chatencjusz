@@ -25,9 +25,9 @@ public class VadGateNode : IAudioNode
     private readonly Dictionary<ulong, UserVadData> _userVad = new();
     private readonly ConcurrentDictionary<ulong, UserVadState> _userStates = new();
     
-    private sealed class UserVadData(SileroVadNode vad, int preBufferCapacity)
+    private sealed class UserVadData(SileroVadWrapper vad, int preBufferCapacity)
     {
-        public SileroVadNode Vad { get; } = vad;
+        public SileroVadWrapper Vad { get; } = vad;
         public List<float> SampleBuffer { get; } = new(VadWindowSize * 2);
         public Queue<AudioFrame> PreBuffer { get; } = new(preBufferCapacity + 1);
         public int PreBufferCapacity { get; } = preBufferCapacity;
@@ -82,7 +82,7 @@ public class VadGateNode : IAudioNode
                 {
                     var preBufferCapacity = _configService.Current.Vad.PreBufferFrameCount;
                     var onnxSession = _vadModelService.CreateSession();
-                    var vadNode = new SileroVadNode(onnxSession);
+                    var vadNode = new SileroVadWrapper(onnxSession);
                     userData = new UserVadData(vadNode, preBufferCapacity);
                     _userVad[frame.UserId] = userData;
                     _logger.LogDebug(

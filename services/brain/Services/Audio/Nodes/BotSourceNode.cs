@@ -66,8 +66,7 @@ public class BotSourceNode(
                 {
                     Samples = floatSamples.AsMemory(0, SamplesPerFrame),
                     UserId = grpcFrame.UserId,
-                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime,
-                    SessionId = sessionId
+                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime
                 };
                 
                 if (isBuffering)
@@ -118,7 +117,7 @@ public class BotSourceNode(
     
     private static void ConvertPcmToFloat(ReadOnlySpan<byte> pcmBytes, Span<float> floatSamples)
     {
-        for (int i = 0; i < floatSamples.Length; i++)
+        for (var i = 0; i < floatSamples.Length; i++)
         {
             var pcmSample = BinaryPrimitives.ReadInt16LittleEndian(pcmBytes.Slice(i * 2, 2));
             floatSamples[i] = pcmSample / 32768f;

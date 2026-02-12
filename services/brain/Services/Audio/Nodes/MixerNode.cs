@@ -68,7 +68,7 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
                     if (samplesToMix > 0)
                     {
                         var span = CollectionsMarshal.AsSpan(inputData.Buffer);
-                        for (int i = 0; i < samplesToMix; i++)
+                        for (var i = 0; i < samplesToMix; i++)
                         {
                             mixBuffer[i] = Math.Clamp(mixBuffer[i] + span[i], -1f, 1f);
                         }

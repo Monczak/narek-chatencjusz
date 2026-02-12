@@ -76,7 +76,14 @@ public class SileroVadModelService
             // Clean up partial download
             if (File.Exists(_modelPath))
             {
-                try { File.Delete(_modelPath); } catch { }
+                try
+                {
+                    File.Delete(_modelPath);
+                }
+                catch
+                {
+                    // Ignore exceptions
+                }
             }
             
             throw;
