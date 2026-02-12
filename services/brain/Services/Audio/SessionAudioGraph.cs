@@ -205,7 +205,7 @@ public class SessionAudioGraph : IAsyncDisposable
                         .Select(n => new DspNodeMetrics(n.Name, n.Node.QueueDepth))
                         .ToList();
                 
-                    var metrics = new DspSessionMetrics(_sessionId, nodeMetrics, DateTime.UtcNow);
+                    var metrics = new DspSessionMetrics(_sessionId, nodeMetrics, _botSink.AverageLatencyMs, DateTime.UtcNow);
                     await _hub.Clients.All.SendAsync("DspMetricsUpdated", metrics, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

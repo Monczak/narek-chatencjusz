@@ -66,7 +66,8 @@ public class BotSourceNode(
                 {
                     Samples = floatSamples.AsMemory(0, SamplesPerFrame),
                     UserId = grpcFrame.UserId,
-                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime
+                    // Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(grpcFrame.Timestamp).UtcDateTime
+                    Timestamp = DateTime.UtcNow
                 };
                 
                 if (isBuffering)

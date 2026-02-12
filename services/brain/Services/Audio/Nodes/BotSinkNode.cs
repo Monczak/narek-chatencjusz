@@ -21,6 +21,8 @@ public class BotSinkNode(
 
     public ChannelReader<AudioFrame> Output => throw new NotSupportedException("Sink has no output");
     
+    public double AverageLatencyMs { get; private set; }
+    
     // 48kHz stereo, 20ms frames
     private const int FrameSize = 960 * 2; // 1920 samples
     private const int FrameIntervalMs = 20;
@@ -31,6 +33,8 @@ public class BotSinkNode(
         
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(FrameIntervalMs));
         var pcmBuffer = ArrayPool<byte>.Shared.Rent(FrameSize * 2); // 2 bytes per sample
+
+        const double smoothingFactor = 0.1;
         
         try
         {
@@ -41,6 +45,16 @@ public class BotSinkNode(
                 {
                     if (_input.TryRead(out var frame))
                     {
+                        var currentLatency = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
+                        if (AverageLatencyMs == 0)
+                        {
+                            AverageLatencyMs = currentLatency;
+                        }
+                        else
+                        {
+                            AverageLatencyMs = AverageLatencyMs * (1 - smoothingFactor) +
+                                               currentLatency * smoothingFactor;
+                        }
                         // Convert float32 to int16 PCM
                         ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
                         

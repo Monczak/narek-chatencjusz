@@ -46,15 +46,18 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
                 var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
                 
                 Array.Clear(mixBuffer, 0, FrameSize);
-                
-                var timestamp = DateTime.UtcNow;
+                DateTime? oldestInputTimestamp = null;
                 
                 foreach (var inputData in _inputs.Values)
                 {
                     while (inputData.Reader.TryRead(out var frame))
                     {
                         inputData.Buffer.AddRange(frame.Samples.Span);
-                        if (frame.Timestamp > timestamp) timestamp = frame.Timestamp;
+                        
+                        if (oldestInputTimestamp == null || frame.Timestamp < oldestInputTimestamp.Value)
+                        {
+                            oldestInputTimestamp = frame.Timestamp;
+                        }
                         
                         if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
                         {
@@ -76,12 +79,14 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
                     }
                 }
                 
+                var outputTimestamp = oldestInputTimestamp ?? DateTime.UtcNow;
+                
                 // Always produce a frame (silence if no inputs had data)
                 // This is important for maintaining timing
                 var outputFrame = new AudioFrame
                 {
                     Samples = mixBuffer.AsMemory(0, FrameSize),
-                    Timestamp = timestamp
+                    Timestamp = outputTimestamp
                 };
                 
                 // This blocks if sink isn't ready (backpressure)
