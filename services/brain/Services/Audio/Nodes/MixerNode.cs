@@ -37,14 +37,16 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     {
         logger.LogInformation("MixerNode started");
         
-        var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
         
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
+                var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
+                
                 Array.Clear(mixBuffer, 0, FrameSize);
+                
                 var timestamp = DateTime.UtcNow;
                 
                 foreach (var inputData in _inputs.Values)
@@ -54,8 +56,6 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
                         inputData.Buffer.AddRange(frame.Samples.Span);
                         if (frame.Timestamp > timestamp) timestamp = frame.Timestamp;
                         
-                        // CRITICAL: Return the input frame's array to the pool!
-                        // This prevents memory leaks since BotSourceNode is now Renting.
                         if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
                         {
                             ArrayPool<float>.Shared.Return(segment.Array);
@@ -94,7 +94,6 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
         }
         finally
         {
-            ArrayPool<float>.Shared.Return(mixBuffer);
             _output.Writer.Complete();
             logger.LogInformation("MixerNode stopped");
         }

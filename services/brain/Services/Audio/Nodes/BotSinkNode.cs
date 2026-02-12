@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using Grpc.Core;
@@ -50,6 +51,11 @@ public class BotSinkNode(
                         };
                         
                         await _grpcOutput.WriteAsync(grpcFrame, ct);
+                        
+                        if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
+                        {
+                            ArrayPool<float>.Shared.Return(segment.Array);
+                        }
                     }
                 }
             }
