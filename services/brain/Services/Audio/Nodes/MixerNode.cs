@@ -24,7 +24,7 @@ public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     private readonly Lock _inputsLock = new();
 
     // 20 ms of stereo 48 kHz float = 960 * 2 = 1920 samples
-    private const int FrameSamples = 3840;
+    private const int FrameSamples = 1920;
 
     public ChannelReader<AudioFrame> Output => _output.Reader;
 
@@ -75,18 +75,18 @@ public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
 
             // ── coarse sleep with a small margin for the spin phase ───────────
             double sleepUs = nextUs - elapsedUs - 1_500.0; // 1.5 ms spin margin
-            logger.LogInformation("{Time} Sleep for {sleepUs}", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds(), sleepUs);
+            // logger.LogInformation("{Time} Sleep for {sleepUs}", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds(), sleepUs);
             if (sleepUs > 0)
                 Thread.Sleep((int)(sleepUs / 1000.0));
 
             // ── spin-wait for the exact boundary ─────────────────────────────
-            logger.LogInformation("{Time} Spin Wait Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
+            // logger.LogInformation("{Time} Spin Wait Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
             while (sw.Elapsed.TotalMicroseconds < nextUs && !ct.IsCancellationRequested)
                 Thread.SpinWait(10);
 
-            logger.LogInformation("{Time} ProcessTick Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
+            // logger.LogInformation("{Time} ProcessTick Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
             ProcessTick();
-            logger.LogInformation("{Time} ProcessTick Ended", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
+            // logger.LogInformation("{Time} ProcessTick Ended", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
         }
     }
 

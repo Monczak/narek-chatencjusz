@@ -25,7 +25,7 @@ class Settings(BaseSettings):
         except ValueError:
             return []
 
-    @computed_field  # type: ignore[misc]
+    @computed_field
     @property
     def brain_host(self) -> str:
         """Hostname only, without port — used by the UDP audio transport."""

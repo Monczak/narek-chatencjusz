@@ -83,7 +83,7 @@ class Container(containers.DeclarativeContainer):
     # brain_url is "brain:5050" — we extract just the host part.
     audio_stream_service = providers.Singleton(
         AudioStreamService,
-        brain_host="localhost",
+        brain_host=config.brain_host,
         node_id=node_id,
         voice_service=None  # injected after voice_service creation
     )

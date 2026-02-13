@@ -210,10 +210,13 @@ public sealed class UserPipeline
         // var monoToStereo = new ChannelConverterNode(
         //     resampleUp.Output, monoToStereo: true, lf.CreateLogger<ChannelConverterNode>());
 
-        mixer.AddInput($"user_{userId}", _source.Reader);
+        var reverb = new SchroederReverbNode(
+            _source.Reader, lf);
+        
+        mixer.AddInput($"user_{userId}", reverb.Output);
 
         // _nodes = [stereoToMono, resampleDown, vad, resampleUp, monoToStereo];
-        _nodes = [];
+        _nodes = [reverb];
     }
 
     public void Push(ulong userId, ReadOnlySpan<byte> pcm16BitStereo)
