@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using BrainService.Hubs;
 using BrainService.Proto;
 using BrainService.Services.Configuration;
@@ -18,7 +19,7 @@ public class AudioGraphFactory(
 
     public async Task<SessionAudioGraph> CreateSessionGraphAsync(
         string sessionId,
-        IAsyncStreamReader<UserAudioFrame> botInputStream,
+        PipeReader botInputReader,
         IServerStreamWriter<AudioFrame> botOutputStream)
     {
         _logger.LogInformation("Creating audio graph for session {SessionId}", sessionId);
@@ -32,7 +33,7 @@ public class AudioGraphFactory(
         var graph = new SessionAudioGraph(
             sessionId,
             sessionState.GuildId,
-            botInputStream,
+            botInputReader,
             botOutputStream,
             sessionService,
             configService,

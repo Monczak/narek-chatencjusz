@@ -9,6 +9,8 @@ using RedLockNet;
 using RedLockNet.SERedis;
 using StackExchange.Redis;
 
+ThreadPool.SetMinThreads(250, 250);
+
 var builder = WebApplication.CreateBuilder(args);
 
 var valkeyUrl = builder.Configuration.GetValue<string>("Valkey:Url") ?? "localhost:6379";

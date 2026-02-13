@@ -217,6 +217,9 @@ public class BrainGrpcService(
     {
         var sessionId = context.RequestHeaders.GetValue("session_id");
         
+        var httpContext = context.GetHttpContext();
+        var rawBodyReader = httpContext.Request.BodyReader;
+        
         if (string.IsNullOrEmpty(sessionId))
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "session_id required in metadata"));
@@ -233,7 +236,7 @@ public class BrainGrpcService(
         {
             // Create audio processing graph for this session
             var graph = await audioGraphFactory.CreateSessionGraphAsync(
-                sessionId, requestStream, responseStream);
+                sessionId, rawBodyReader, responseStream);
             
             await using (graph)
             {

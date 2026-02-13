@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 
@@ -41,7 +43,7 @@ public class UserDemuxerNode : IAudioNode
                     // Create a dedicated stream for this user
                     channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4)
                     {
-                        FullMode = BoundedChannelFullMode.DropOldest,
+                        FullMode = BoundedChannelFullMode.Wait,
                         SingleReader = true,
                         SingleWriter = true
                     });
@@ -53,7 +55,28 @@ public class UserDemuxerNode : IAudioNode
                     _onNewUserStream(frame.UserId, channel.Reader);
                 }
 
-                await channel.Writer.WriteAsync(frame, ct);
+                if (!channel.Writer.TryWrite(frame))
+                {
+                    // Channel full (Mixer is behind). Drop oldest.
+                    if (channel.Reader.TryRead(out var droppedFrame))
+                    {
+                        // CRITICAL: Return the array!
+                        if (MemoryMarshal.TryGetArray(droppedFrame.Samples, out var segment) && segment.Array != null)
+                        {
+                            ArrayPool<float>.Shared.Return(segment.Array);
+                        }
+                    }
+
+                    // Try writing again
+                    if (!channel.Writer.TryWrite(frame))
+                    {
+                        // Failed again; drop the current frame to prevent leak
+                        if (MemoryMarshal.TryGetArray(frame.Samples, out var currentSegment) && currentSegment.Array != null)
+                        {
+                            ArrayPool<float>.Shared.Return(currentSegment.Array);
+                        }
+                    }
+                }
             }
         }
         catch (OperationCanceledException)

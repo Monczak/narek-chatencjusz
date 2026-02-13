@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using BrainService.Domain.Audio;
 using BrainService.Hubs;
 using BrainService.Proto;
@@ -34,7 +35,7 @@ public class SessionAudioGraph : IAsyncDisposable
     public SessionAudioGraph(
         string sessionId,
         ulong guildId,
-        IAsyncStreamReader<UserAudioFrame> botInputStream,
+        PipeReader botInputReader,
         IServerStreamWriter<Proto.AudioFrame> botOutputStream,
         VoiceSessionService sessionService,
         BrainConfigService configService,
@@ -50,7 +51,7 @@ public class SessionAudioGraph : IAsyncDisposable
         
         // Bot Source: Receives 48kHz stereo int16 PCM from bot, converts to float32
         _botSource = new BotSourceNode(
-            botInputStream,
+            botInputReader,
             sessionId,
             loggerFactory.CreateLogger<BotSourceNode>()
         );
@@ -144,21 +145,11 @@ public class SessionAudioGraph : IAsyncDisposable
         
         try
         {
-            var botSourceTask = Task.Run(async () =>
-            {
-                try
-                {
-                    await _botSource.StartAsync(ct);
-                }
-                finally
-                {
-                    _logger.LogInformation(
-                        "BotSourceNode finished – cancelling graph for session {SessionId}", _sessionId);
-                    await _internalCts.CancelAsync();
-                }
-            }, ct);
-            
-            _nodeTasks.Add(botSourceTask);
+            _nodeTasks.Add(Task.Factory.StartNew(
+                () => _botSource.StartAsync(ct),
+                ct,
+                TaskCreationOptions.LongRunning, // <--- Tells scheduler to oversubscribe if needed
+                TaskScheduler.Default).Unwrap());
             
             // _nodeTasks.Add(Task.Run(() => _stereoToMono.StartAsync(ct), ct));
             // _nodeTasks.Add(Task.Run(() => _resampler48To16.StartAsync(ct), ct));
@@ -172,10 +163,14 @@ public class SessionAudioGraph : IAsyncDisposable
             
             _nodeTasks.Add(RunOnDedicatedThread(_mixer.StartAsync, ct, $"mixer-{_sessionId}"));
             
-            _nodeTasks.Add(Task.Run(() => _botSink.StartAsync(ct), ct));
+            _nodeTasks.Add(Task.Factory.StartNew(
+                () => _botSink.StartAsync(ct),
+                ct,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default).Unwrap());
             
             // Start DSP metrics push to dashboard
-            _nodeTasks.Add(Task.Run(() => MetricsLoopAsync(ct), ct));
+            // _nodeTasks.Add(Task.Run(() => MetricsLoopAsync(ct), ct));
             
             // Wait for all nodes to complete
             await Task.WhenAll(_nodeTasks);

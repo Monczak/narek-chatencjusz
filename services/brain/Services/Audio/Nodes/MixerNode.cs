@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Threading.Channels;
 using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
+// using System.Collections.Concurrent; // REMOVE THIS
 using System.Diagnostics;
 using BrainService.Domain.Audio;
 
@@ -9,68 +9,69 @@ namespace BrainService.Services.Audio.Nodes;
 
 public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
 {
+    // OPTIMIZATION: Use SingleReader/SingleWriter to reduce Channel allocations
     private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(50)
     {
-        FullMode = BoundedChannelFullMode.DropOldest
+        FullMode = BoundedChannelFullMode.Wait,
+        SingleReader = true,
+        SingleWriter = true
     });
     
-    private readonly ConcurrentDictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
+    // FIX: Use Dictionary + Lock instead of ConcurrentDictionary to avoid Enumerator allocations
+    private readonly Dictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
+    private readonly object _lock = new();
 
-    private const int FrameSize = 960 * 2; // 20ms at 48kHz stereo
+    private const int FrameSize = 960 * 2; 
 
     public ChannelReader<AudioFrame> Output => _output.Reader;
 
     public void AddInput(string name, ChannelReader<AudioFrame> input)
     {
-        _inputs.TryAdd(name, (input ?? throw new ArgumentNullException(nameof(input)), new List<float>(FrameSize * 5)));
-        logger.LogInformation("Added input '{Name}' to mixer", name);
+        lock (_lock)
+        {
+            if (_inputs.TryAdd(name, (input ?? throw new ArgumentNullException(nameof(input)), new List<float>(FrameSize * 5))))
+            {
+                logger.LogInformation("Added input '{Name}' to mixer", name);
+            }
+        }
     }
     
     public void RemoveInput(string name)
     {
-        if (_inputs.TryRemove(name, out _))
+        lock (_lock)
         {
-            logger.LogInformation("Removed input '{Name}' from mixer", name);
+            if (_inputs.Remove(name))
+            {
+                logger.LogInformation("Removed input '{Name}' from mixer", name);
+            }
         }
     }
     
+    // ... StartAsync and RunTimingLoop remain the same ...
     public async Task StartAsync(CancellationToken ct)
     {
-        // Delegate to a dedicated thread so the timing loop is
-        // never at the mercy of thread pool scheduling.
-        await Task.Factory.StartNew(
-            () => RunTimingLoop(ct),
-            ct,
-            TaskCreationOptions.LongRunning, // hints the pool to use a dedicated thread
-            TaskScheduler.Default
-        );
+        await RunTimingLoop(ct);
     }
-    
-    private void RunTimingLoop(CancellationToken ct)
+
+    private async Task RunTimingLoop(CancellationToken ct)
     {
         logger.LogInformation("MixerNode started on dedicated thread");
-        var sw = Stopwatch.StartNew();
+    
+        // PeriodicTimer automatically corrects for drift and is more efficient than Sleep/SpinWait
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
 
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (await timer.WaitForNextTickAsync(ct))
             {
-                // Always target the next 20ms boundary strictly in the future.
-                // If we overslept and missed one, we skip it rather than catching up.
-                var elapsed = sw.Elapsed.TotalMilliseconds;
-                var nextBoundary = (Math.Floor(elapsed / 20.0) + 1) * 20.0;
-
-                var sleepMs = nextBoundary - elapsed - 2.0;
-                if (sleepMs > 0)
-                    Thread.Sleep((int)sleepMs);
-
-                while (sw.Elapsed.TotalMilliseconds < nextBoundary && !ct.IsCancellationRequested)
-                    Thread.SpinWait(50);
-
                 ProcessTick();
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) 
+        {
+            // Ignore
+        }
+        catch (Exception ex)
         {
             logger.LogError(ex, "MixerNode timing loop error");
             throw;
@@ -78,34 +79,43 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
         finally
         {
             _output.Writer.TryComplete();
-            logger.LogInformation("MixerNode stopped");
         }
     }
     
     private void ProcessTick()
     {
-        foreach (var inputData in _inputs.Values)
+        // FIX: Lock the dictionary during iteration. 
+        // Dictionary<TKey, TValue>.Enumerator is a struct, so this Foreach is Zero-Allocation.
+        lock (_lock) 
         {
-            while (inputData.Reader.TryRead(out var frame))
+            foreach (var kvp in _inputs)
             {
-                inputData.Buffer.AddRange(frame.Samples.Span);
-                if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
-                    ArrayPool<float>.Shared.Return(seg.Array);
+                var inputData = kvp.Value;
+                while (inputData.Reader.TryRead(out var frame))
+                {
+                    inputData.Buffer.AddRange(frame.Samples.Span);
+                    if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                        ArrayPool<float>.Shared.Return(seg.Array);
+                }
             }
         }
 
         var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
         Array.Clear(mixBuffer, 0, FrameSize);
 
-        foreach (var inputData in _inputs.Values)
+        lock (_lock)
         {
-            var available = Math.Min(inputData.Buffer.Count, FrameSize);
-            if (available <= 0) continue;
+            foreach (var kvp in _inputs)
+            {
+                var inputData = kvp.Value;
+                var available = Math.Min(inputData.Buffer.Count, FrameSize);
+                if (available <= 0) continue;
 
-            var span = CollectionsMarshal.AsSpan(inputData.Buffer);
-            for (var i = 0; i < available; i++)
-                mixBuffer[i] = Math.Clamp(mixBuffer[i] + span[i], -1f, 1f);
-            inputData.Buffer.RemoveRange(0, available);
+                var span = CollectionsMarshal.AsSpan(inputData.Buffer);
+                for (var i = 0; i < available; i++)
+                    mixBuffer[i] = Math.Clamp(mixBuffer[i] + span[i], -1f, 1f);
+                inputData.Buffer.RemoveRange(0, available);
+            }
         }
 
         var newFrame = new AudioFrame
@@ -116,9 +126,18 @@ public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
 
         if (!_output.Writer.TryWrite(newFrame))
         {
-            // Dropped because sink is stalling — return buffer to pool
-            ArrayPool<float>.Shared.Return(mixBuffer);
-            logger.LogWarning("MixerNode: dropped frame (sink backpressure)");
+             // Manual Drop logic (Keep this from previous fix!)
+            if (_output.Reader.TryRead(out var droppedFrame))
+            {
+                if (MemoryMarshal.TryGetArray(droppedFrame.Samples, out var segment) && segment.Array != null)
+                    ArrayPool<float>.Shared.Return(segment.Array);
+                logger.LogWarning("MixerNode: Dropped frame to maintain realtime");
+            }
+
+            if (!_output.Writer.TryWrite(newFrame))
+            {
+                ArrayPool<float>.Shared.Return(mixBuffer);
+            }
         }
     }
 }

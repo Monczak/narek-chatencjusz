@@ -30,10 +30,28 @@ public class BotSinkNode(
     public async Task StartAsync(CancellationToken ct)
     {
         logger.LogInformation("BotSinkNode started for guild {GuildId}", guildId);
-        var pcmBuffer = ArrayPool<byte>.Shared.Rent(FrameSize * 2);
+        
+        // RING BUFFER STRATEGY
+        // We allocate 50 buffers (1 second of audio). 
+        // This gives gRPC 1000ms to send a frame before we dare to touch that memory again.
+        // This creates ZERO allocations per frame after the initial setup.
+        const int bufferCount = 50; 
+        var ringBuffer = new byte[bufferCount][];
+        for (int i = 0; i < bufferCount; i++)
+        {
+            ringBuffer[i] = new byte[FrameSize * 2];
+        }
+        
+        long frameIndex = 0;
         const double smoothingFactor = 0.1;
-        const int writeTimeoutMs = 40; // 2 frames — if exceeded, drop
+        const int writeTimeoutMs = 40; 
 
+        var reuseCts = new CancellationTokenSource();
+        var reusableGrpcFrame = new Proto.AudioFrame 
+        { 
+            GuildId = guildId 
+        };
+        
         try
         {
             while (await _input.WaitToReadAsync(ct))
@@ -45,29 +63,52 @@ public class BotSinkNode(
                     ? currentLatency
                     : AverageLatencyMs * (1 - smoothingFactor) + currentLatency * smoothingFactor;
 
-                ConvertFloatToPcm(frame.Samples.Span, pcmBuffer.AsSpan(0, FrameSize * 2));
+                // 1. Select the next buffer in the ring
+                var currentBuffer = ringBuffer[frameIndex % bufferCount];
+                frameIndex++;
 
+                // 2. Write PCM data directly into this specific buffer
+                ConvertFloatToPcm(frame.Samples.Span, currentBuffer.AsSpan());
+
+                // 3. Return the float[] to the pool (standard logic)
                 if (MemoryMarshal.TryGetArray(frame.Samples, out var segment) && segment.Array != null)
                     ArrayPool<float>.Shared.Return(segment.Array);
 
-                var grpcFrame = new Proto.AudioFrame
+                // 4. ZERO-COPY WRAP
+                // It is now safe to wrap this buffer because we won't touch 'currentBuffer' 
+                // again for another 50 iterations (1 second).
+                var pcmData = UnsafeByteOperations.UnsafeWrap(currentBuffer);
+
+                reusableGrpcFrame.PcmData = pcmData;
+
+                // EFFICIENT TIMEOUT PATTERN
+                // 1. Reset the reusable token
+                if (!reuseCts.TryReset())
                 {
-                    GuildId = guildId,
-                    PcmData = ByteString.CopyFrom(pcmBuffer, 0, FrameSize * 2)
-                };
-
-                using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                writeCts.CancelAfter(writeTimeoutMs);
-
+                    // Should practically never happen unless cancelled previously
+                    reuseCts.Dispose(); 
+                    reuseCts = new CancellationTokenSource();
+                }
+            
+                // 2. Set the timeout
+                reuseCts.CancelAfter(writeTimeoutMs);
+            
+                // 3. Link with the main token (without allocating a LinkedTokenSource)
+                // We pass the reusable token to WriteAsync. 
+                // Note: If 'ct' (main token) cancels, the loop exits anyway, 
+                // so we don't strictly need to link them for the Write call itself 
+                // as long as we check 'ct' in the loop.
+            
                 try
                 {
-                    await _grpcOutput.WriteAsync(grpcFrame, writeCts.Token);
+                    await _grpcOutput.WriteAsync(reusableGrpcFrame, reuseCts.Token);
                 }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                catch (OperationCanceledException)
                 {
-                    // Write timed out — Python is backed up. Drop the frame and continue.
-                    // The mixer's DropOldest mode already handles upstream buffering.
-                    logger.LogWarning("BotSinkNode: frame dropped (write timeout >40ms), guild {GuildId}", guildId);
+                    if (ct.IsCancellationRequested) throw; // Main token cancelled
+                
+                    // Otherwise it was our timeout
+                    logger.LogWarning("BotSinkNode: frame dropped (write timeout)");
                 }
             }
         }
@@ -82,7 +123,8 @@ public class BotSinkNode(
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(pcmBuffer);
+            // No ArrayPool to return to, we own the ringBuffer. GC will handle it.
+            reuseCts.Dispose();
             logger.LogInformation("BotSinkNode stopped for guild {GuildId}", guildId);
         }
     }
