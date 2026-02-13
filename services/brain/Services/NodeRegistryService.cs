@@ -11,6 +11,7 @@ public class NodeRegistryService(
     ILogger<NodeRegistryService> logger)
 {
     private readonly IDatabase _db = redis.GetDatabase();
+    
     public async Task<string?> GetNodeForGuildAsync(ulong guildId)
     {
         var nodeId = await _db.StringGetAsync($"guild:{guildId}:connection");
@@ -83,13 +84,12 @@ public class NodeRegistryService(
         await _db.KeyDeleteAsync($"guild:{guild.Id}:channel");
         await _db.KeyDeleteAsync($"guild:{guild.Id}:session");
     }
-
-    public async Task CleanupStaleConnectionsAsync()
+    
+    public async Task<IReadOnlyList<string>> CleanupStaleConnectionsAsync()
     {
-        var server = redis.GetServer(redis.GetEndPoints().First());
+        var server    = redis.GetServer(redis.GetEndPoints().First());
         var guildKeys = server.Keys(pattern: "guild:*:connection");
-
-        var cleanedCount = 0;
+        var cleaned   = new List<string>();
 
         foreach (var key in guildKeys)
         {
@@ -98,16 +98,25 @@ public class NodeRegistryService(
                 var nodeId = await _db.StringGetAsync(key);
                 if (nodeId.IsNullOrEmpty) continue;
 
-                var heartbeatKey = $"node:{nodeId}:heartbeat";
-                bool isAlive = await _db.KeyExistsAsync(heartbeatKey);
+                var isAlive = await _db.KeyExistsAsync($"node:{nodeId}:heartbeat");
+                if (isAlive) continue;
 
-                if (!isAlive)
+                // Extract guild ID from key "guild:{id}:connection"
+                var parts = key.ToString().Split(':');
+                if (parts.Length >= 2 && ulong.TryParse(parts[1], out var guildId))
                 {
-                    await _db.KeyDeleteAsync(key);
-                    logger.LogWarning("Cleaned up zombie connection mapped to dead node {NodeId} (key {Key})", nodeId,
-                        key);
-                    cleanedCount++;
+                    var sessionId = await GetSessionForGuildAsync(guildId);
+
+                    await _db.KeyDeleteAsync($"guild:{guildId}:connection");
+                    await _db.KeyDeleteAsync($"guild:{guildId}:channel");
+                    await _db.KeyDeleteAsync($"guild:{guildId}:session");
+
+                    if (!string.IsNullOrEmpty(sessionId))
+                        cleaned.Add(sessionId);
                 }
+
+                logger.LogWarning(
+                    "Cleaned up stale connection for dead node {NodeId} (key {Key})", nodeId, key);
             }
             catch (Exception ex)
             {
@@ -115,9 +124,9 @@ public class NodeRegistryService(
             }
         }
 
-        if (cleanedCount > 0)
-        {
-            logger.LogInformation("Cleaned up {Count} stale connections", cleanedCount);
-        }
+        if (cleaned.Count > 0)
+            logger.LogInformation("Cleaned up {Count} stale connections", cleaned.Count);
+
+        return cleaned;
     }
 }

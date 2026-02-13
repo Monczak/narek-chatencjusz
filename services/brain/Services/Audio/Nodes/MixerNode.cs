@@ -1,143 +1,141 @@
 using System.Buffers;
-using System.Threading.Channels;
-using System.Runtime.InteropServices;
-// using System.Collections.Concurrent; // REMOVE THIS
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using BrainService.Domain.Audio;
 
 namespace BrainService.Services.Audio.Nodes;
 
-public class MixerNode(ILogger<MixerNode> logger) : IAudioNode
+/// <summary>
+/// Mixes N input streams into one output at a fixed 20 ms tick rate.
+/// Runs on a dedicated OS thread so it is immune to thread-pool starvation.
+/// The timing loop always targets the *next future* 20 ms boundary so an
+/// overslept Sleep never causes burst emission of multiple frames.
+/// </summary>
+public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
 {
-    // OPTIMIZATION: Use SingleReader/SingleWriter to reduce Channel allocations
-    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(50)
-    {
-        FullMode = BoundedChannelFullMode.Wait,
-        SingleReader = true,
-        SingleWriter = true
-    });
-    
-    // FIX: Use Dictionary + Lock instead of ConcurrentDictionary to avoid Enumerator allocations
-    private readonly Dictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
-    private readonly object _lock = new();
+    // Output channel — DropOldest so a slow sink never stalls the timing thread.
+    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(
+        new BoundedChannelOptions(50) { FullMode = BoundedChannelFullMode.DropOldest });
 
-    private const int FrameSize = 960 * 2; 
+    // Input registry — plain Dictionary + lock to avoid ConcurrentDictionary enumerator allocations.
+    private readonly Dictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
+    private readonly Lock _inputsLock = new();
+
+    // 20 ms of stereo 48 kHz float = 960 * 2 = 1920 samples
+    private const int FrameSamples = 3840;
 
     public ChannelReader<AudioFrame> Output => _output.Reader;
 
-    public void AddInput(string name, ChannelReader<AudioFrame> input)
+    // ── input management ─────────────────────────────────────────────────────
+    public void AddInput(string name, ChannelReader<AudioFrame> reader)
     {
-        lock (_lock)
+        lock (_inputsLock)
         {
-            if (_inputs.TryAdd(name, (input ?? throw new ArgumentNullException(nameof(input)), new List<float>(FrameSize * 5))))
-            {
-                logger.LogInformation("Added input '{Name}' to mixer", name);
-            }
+            _inputs.TryAdd(name, (reader, new List<float>(FrameSamples * 4)));
+            logger.LogDebug("Mixer: added input '{Name}'", name);
         }
     }
-    
+
     public void RemoveInput(string name)
     {
-        lock (_lock)
+        lock (_inputsLock)
         {
-            if (_inputs.Remove(name))
-            {
-                logger.LogInformation("Removed input '{Name}' from mixer", name);
-            }
+            _inputs.Remove(name);
+            logger.LogDebug("Mixer: removed input '{Name}'", name);
         }
-    }
-    
-    // ... StartAsync and RunTimingLoop remain the same ...
-    public async Task StartAsync(CancellationToken ct)
-    {
-        await RunTimingLoop(ct);
     }
 
-    private async Task RunTimingLoop(CancellationToken ct)
+    // ── IAudioNode ───────────────────────────────────────────────────────────
+    public Task StartAsync(CancellationToken ct)
     {
-        logger.LogInformation("MixerNode started on dedicated thread");
-    
-        // PeriodicTimer automatically corrects for drift and is more efficient than Sleep/SpinWait
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        // Block the calling thread (which should already be a dedicated OS thread
+        // started via Task.Factory.StartNew with TaskCreationOptions.LongRunning).
+        TimingLoop(ct);
+        _output.Writer.TryComplete();
+        return Task.CompletedTask;
+    }
 
-        try
+    // ── timing loop ──────────────────────────────────────────────────────────
+    private void TimingLoop(CancellationToken ct)
+    {
+        logger.LogInformation("MixerNode timing loop started on thread '{Name}'",
+            Thread.CurrentThread.Name ?? "unnamed");
+
+        var sw = Stopwatch.StartNew();
+
+        while (!ct.IsCancellationRequested)
         {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                ProcessTick();
-            }
-        }
-        catch (OperationCanceledException) 
-        {
-            // Ignore
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "MixerNode timing loop error");
-            throw;
-        }
-        finally
-        {
-            _output.Writer.TryComplete();
+            // ── compute the next 20 ms boundary strictly in the future ────────
+            // Using TotalMicroseconds for precision; Math.Floor avoids floating-
+            // point drift accumulation over long sessions.
+            var elapsedUs = sw.Elapsed.TotalMicroseconds;
+            var nextUs = (Math.Floor(elapsedUs / 20_000.0) + 1.0) * 20_000.0;
+
+            // ── coarse sleep with a small margin for the spin phase ───────────
+            double sleepUs = nextUs - elapsedUs - 1_500.0; // 1.5 ms spin margin
+            logger.LogInformation("{Time} Sleep for {sleepUs}", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds(), sleepUs);
+            if (sleepUs > 0)
+                Thread.Sleep((int)(sleepUs / 1000.0));
+
+            // ── spin-wait for the exact boundary ─────────────────────────────
+            logger.LogInformation("{Time} Spin Wait Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
+            while (sw.Elapsed.TotalMicroseconds < nextUs && !ct.IsCancellationRequested)
+                Thread.SpinWait(10);
+
+            logger.LogInformation("{Time} ProcessTick Started", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
+            ProcessTick();
+            logger.LogInformation("{Time} ProcessTick Ended", ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeMilliseconds());
         }
     }
-    
+
+    // ── per-tick work ─────────────────────────────────────────────────────────
     private void ProcessTick()
     {
-        // FIX: Lock the dictionary during iteration. 
-        // Dictionary<TKey, TValue>.Enumerator is a struct, so this Foreach is Zero-Allocation.
-        lock (_lock) 
+        // Drain all pending frames from every input into per-input sample buffers.
+        lock (_inputsLock)
         {
-            foreach (var kvp in _inputs)
+            foreach (var (_, (reader, buf)) in _inputs)
             {
-                var inputData = kvp.Value;
-                while (inputData.Reader.TryRead(out var frame))
+                while (reader.TryRead(out var frame))
                 {
-                    inputData.Buffer.AddRange(frame.Samples.Span);
-                    if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
-                        ArrayPool<float>.Shared.Return(seg.Array);
+                    buf.AddRange(frame.Samples.Span);
+                    ReturnFrame(frame);
                 }
             }
         }
 
-        var mixBuffer = ArrayPool<float>.Shared.Rent(FrameSize);
-        Array.Clear(mixBuffer, 0, FrameSize);
-
-        lock (_lock)
+        // Mix exactly FrameSamples from each input's buffer into a rented output buffer.
+        var mix = ArrayPool<float>.Shared.Rent(FrameSamples);
+        mix.AsSpan(0, FrameSamples).Clear();
+        
+        lock (_inputsLock)
         {
-            foreach (var kvp in _inputs)
+            foreach (var (_, (_, buf)) in _inputs)
             {
-                var inputData = kvp.Value;
-                var available = Math.Min(inputData.Buffer.Count, FrameSize);
-                if (available <= 0) continue;
+                int avail = Math.Min(buf.Count, FrameSamples);
+                if (avail == 0) continue;
 
-                var span = CollectionsMarshal.AsSpan(inputData.Buffer);
-                for (var i = 0; i < available; i++)
-                    mixBuffer[i] = Math.Clamp(mixBuffer[i] + span[i], -1f, 1f);
-                inputData.Buffer.RemoveRange(0, available);
+                var span = CollectionsMarshal.AsSpan(buf);
+                for (int i = 0; i < avail; i++)
+                    mix[i] = Math.Clamp(mix[i] + span[i], -1f, 1f);
+
+                buf.RemoveRange(0, avail);
             }
-        }
+        } 
 
-        var newFrame = new AudioFrame
-        {
-            Samples = mixBuffer.AsMemory(0, FrameSize),
-            Timestamp = DateTime.UtcNow
-        };
+        var outFrame = new AudioFrame { Samples = mix.AsMemory(0, FrameSamples), Timestamp = DateTime.UtcNow };
 
-        if (!_output.Writer.TryWrite(newFrame))
-        {
-             // Manual Drop logic (Keep this from previous fix!)
-            if (_output.Reader.TryRead(out var droppedFrame))
-            {
-                if (MemoryMarshal.TryGetArray(droppedFrame.Samples, out var segment) && segment.Array != null)
-                    ArrayPool<float>.Shared.Return(segment.Array);
-                logger.LogWarning("MixerNode: Dropped frame to maintain realtime");
-            }
+        // TryWrite — DropOldest mode handles a full channel automatically,
+        // but we still need to return the dropped frame's buffer.
+        if (!_output.Writer.TryWrite(outFrame))
+            ArrayPool<float>.Shared.Return(mix);
+    }
 
-            if (!_output.Writer.TryWrite(newFrame))
-            {
-                ArrayPool<float>.Shared.Return(mixBuffer);
-            }
-        }
+    private static void ReturnFrame(AudioFrame frame)
+    {
+        if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+            ArrayPool<float>.Shared.Return(seg.Array);
     }
 }

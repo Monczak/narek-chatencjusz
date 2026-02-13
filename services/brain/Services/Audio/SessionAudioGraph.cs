@@ -1,271 +1,250 @@
-using System.IO.Pipelines;
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using BrainService.Domain.Audio;
-using BrainService.Hubs;
-using BrainService.Proto;
 using BrainService.Services.Audio.Nodes;
+using BrainService.Services.Audio.Transport;
 using BrainService.Services.Configuration;
-using BrainService.Services.Session;
-using Grpc.Core;
-using Microsoft.AspNetCore.SignalR;
 
 namespace BrainService.Services.Audio;
 
-public class SessionAudioGraph : IAsyncDisposable
+/// <summary>
+/// Per-session DSP graph:
+///
+///   UDP inbound frame
+///     → PushUserAudio (per-user Channel)
+///       → [StereoToMono → Resample 48k→16k → VadGate → Resample 16k→48k → MonoToStereo]
+///         → MixerNode (one input per user, dedicated timing thread)
+///           → output loop → ConvertToPcm → UdpAudioServer.SendAudio
+///
+/// Per-user pipelines are created lazily on first received frame.
+/// </summary>
+public sealed class SessionAudioGraph : IAsyncDisposable
 {
-    private readonly string _sessionId;
-    private readonly CancellationTokenSource _internalCts = new();
-    private readonly List<Task> _nodeTasks = [];
+    private readonly Guid                       _sessionId;
+    private readonly ulong                      _guildId;
+    private readonly UdpAudioServer             _udpServer;
+    private readonly BrainConfigService         _configService;
+    private readonly SileroVadModelService      _vadModelService;
+    private readonly ILoggerFactory             _loggerFactory;
     private readonly ILogger<SessionAudioGraph> _logger;
-    private readonly IHubContext<DashboardHub> _hub;
-    
-    private readonly record struct NamedNode(string Name, IAudioNode Node);
-    private readonly List<NamedNode> _monitoredNodes = [];
-    
-    // Nodes
-    private readonly BotSourceNode _botSource;
-    private readonly ChannelConverterNode _stereoToMono;
-    private readonly ResamplerNode _resampler48To16;
-    private readonly VadGateNode _vadGate;
+
     private readonly MixerNode _mixer;
-    private readonly BotSinkNode _botSink;
-    private readonly ResamplerNode _testResampler16To48;
-    private readonly ChannelConverterNode _testMonoToStereo;
-    private readonly UserDemuxerNode _demuxer;
-    
+    private readonly CancellationTokenSource    _cts      = new();
+    private readonly ConcurrentBag<Task>        _tasks    = [];
+    private readonly ConcurrentDictionary<ulong, UserPipeline> _pipelines = new();
+
+    private CancellationToken _graphCt; // set in RunAsync, used by CreatePipeline
+    private const int SamplesPerFrame = 1920; // 48 kHz stereo 20 ms
+
     public SessionAudioGraph(
-        string sessionId,
-        ulong guildId,
-        PipeReader botInputReader,
-        IServerStreamWriter<Proto.AudioFrame> botOutputStream,
-        VoiceSessionService sessionService,
+        Guid sessionId, ulong guildId,
+        UdpAudioServer udpServer,
         BrainConfigService configService,
         SileroVadModelService vadModelService,
-        IHubContext<DashboardHub> hub,
         ILoggerFactory loggerFactory)
     {
-        _sessionId = sessionId;
-        _hub = hub;
-        _logger = loggerFactory.CreateLogger<SessionAudioGraph>();
-        
-        _logger.LogInformation("Building audio graph for session {SessionId}", sessionId);
-        
-        // Bot Source: Receives 48kHz stereo int16 PCM from bot, converts to float32
-        _botSource = new BotSourceNode(
-            botInputReader,
-            sessionId,
-            loggerFactory.CreateLogger<BotSourceNode>()
-        );
-        
-        // Convert stereo to mono for VAD
-        // _stereoToMono = new ChannelConverterNode(
-        //     _botSource.Output,
-        //     monoToStereo: false,
-        //     loggerFactory.CreateLogger<ChannelConverterNode>()
-        // );
-        //
-        // // Resampler: 48kHz mono -> 16kHz mono for VAD
-        // _resampler48To16 = new ResamplerNode(
-        //     _stereoToMono.Output,
-        //     fromRate: 48000,
-        //     toRate: 16000,
-        //     loggerFactory.CreateLogger<ResamplerNode>()
-        // );
-        //
-        // // VAD Gate: Silero VAD with hysteresis, only passes speaking frames
-        // _vadGate = new VadGateNode(
-        //     _resampler48To16.Output,
-        //     sessionService,
-        //     configService,
-        //     vadModelService,
-        //     sessionId,
-        //     guildId,
-        //     loggerFactory.CreateLogger<VadGateNode>()
-        // );
-        
-        // Mixer: Combines multiple audio sources
-        // Currently produces silence as no sources are connected
-        // Future: Add TTS source, soundboard, etc.
-        _mixer = new MixerNode(loggerFactory.CreateLogger<MixerNode>());
-        // TODO: When TTS is added:
-        // var ttsResampler = new ResamplerNode(ttsSource.Output, 24000, 48000, ...)
-        // var monoToStereo = new ChannelConverterNode(ttsResampler.Output, true, ...)
-        // _mixer.AddInput("tts", monoToStereo.Output);
-        
-        // --- TEST DSP ROUTING ---
-        // _testResampler16To48 = new ResamplerNode(
-        //     _vadGate.Output,
-        //     fromRate: 16000,
-        //     toRate: 48000,
-        //     loggerFactory.CreateLogger<ResamplerNode>()
-        // );
-        //
-        // _testMonoToStereo = new ChannelConverterNode(
-        //     _testResampler16To48.Output,
-        //     monoToStereo: true,
-        //     loggerFactory.CreateLogger<ChannelConverterNode>()
-        // );
-        
-        _demuxer = new UserDemuxerNode(
-            _botSource.Output,
-            onNewUserStream: (userId, stream) => 
-            {
-                _mixer.AddInput($"echo_user_{userId}", stream);
-            },
-            loggerFactory.CreateLogger<UserDemuxerNode>()
-        );
-        
-        // Bot Sink: Converts float32 to int16 PCM, streams to bot at 20ms intervals
-        _botSink = new BotSinkNode(
-            _mixer.Output,
-            botOutputStream,
-            guildId,
-            loggerFactory.CreateLogger<BotSinkNode>()
-        );
-        
-        // Register nodes for monitoring (BotSink has no meaningful Output; skip it)
-        _monitoredNodes.AddRange([
-            new NamedNode("BotSource",         _botSource),
-            // new NamedNode("StereoToMono",      _stereoToMono),
-            // new NamedNode("Resampler48to16",   _resampler48To16),
-            // new NamedNode("VadGate",           _vadGate),
-            // new NamedNode("EchoResampler",     _testResampler16To48),
-            // new NamedNode("EchoMonoToStereo",  _testMonoToStereo),
-            new NamedNode("Demuxer",           _demuxer),
-            new NamedNode("Mixer",             _mixer),
-        ]);
-        
-        _logger.LogInformation("Audio graph built for session {SessionId}", sessionId);
+        _sessionId       = sessionId;
+        _guildId         = guildId;
+        _udpServer       = udpServer;
+        _configService   = configService;
+        _vadModelService = vadModelService;
+        _loggerFactory   = loggerFactory;
+        _logger          = loggerFactory.CreateLogger<SessionAudioGraph>();
+        _mixer           = new MixerNode(loggerFactory.CreateLogger<MixerNode>());
+        _graphCt         = _cts.Token;
     }
-    
-    public async Task RunAsync(CancellationToken externalToken = default)
+
+    // ── Entry point ───────────────────────────────────────────────────────────
+
+    public async Task RunAsync(CancellationToken externalCt = default)
     {
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken, _internalCts.Token);
-        var ct = linkedCts.Token;
-        _logger.LogInformation("Starting audio graph for session {SessionId}", _sessionId);
-        
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(externalCt, _cts.Token);
+        _graphCt = linked.Token;
+
+        // Mixer on dedicated AboveNormal thread — never yields to thread pool
+        _tasks.Add(RunOnDedicatedThread(() => _mixer.StartAsync(_graphCt), $"mixer-{_sessionId}"));
+
+        // Output: read mixed frames, send via UDP
+        _tasks.Add(Task.Factory.StartNew(
+            () => OutputLoopAsync(_graphCt),
+            _graphCt, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap());
+
+        _logger.LogInformation("Audio graph running for session {SessionId} guild {GuildId}", _sessionId, _guildId);
+
+        // Block until cancelled — user pipeline tasks are added to _tasks dynamically
+        // and are awaited in DisposeAsync.
+        try { await Task.Delay(Timeout.Infinite, _graphCt); }
+        catch (OperationCanceledException) { /* expected */ }
+    }
+
+    // ── Inbound from UDP server ───────────────────────────────────────────────
+
+    /// <summary>Called on the UDP receive loop hot path — must be fast and non-blocking.</summary>
+    public void PushUserAudio(ulong userId, ReadOnlySpan<byte> pcm16BitStereo48k)
+    {
+        var pipeline = _pipelines.GetOrAdd(userId, CreatePipeline);
+        pipeline.Push(userId, pcm16BitStereo48k);
+    }
+
+    // ── Output loop ───────────────────────────────────────────────────────────
+
+    private async Task OutputLoopAsync(CancellationToken ct)
+    {
+        var pcmBuf = new byte[AudioWireProtocol.PcmFrameSize]; // reused; single consumer
+
         try
         {
-            _nodeTasks.Add(Task.Factory.StartNew(
-                () => _botSource.StartAsync(ct),
-                ct,
-                TaskCreationOptions.LongRunning, // <--- Tells scheduler to oversubscribe if needed
-                TaskScheduler.Default).Unwrap());
-            
-            // _nodeTasks.Add(Task.Run(() => _stereoToMono.StartAsync(ct), ct));
-            // _nodeTasks.Add(Task.Run(() => _resampler48To16.StartAsync(ct), ct));
-            // _nodeTasks.Add(Task.Run(() => _vadGate.StartAsync(ct), ct));
-            
-            // --- TEST DSP ROUTING ---
-            // _nodeTasks.Add(Task.Run(() => _testResampler16To48.StartAsync(ct), ct));
-            // _nodeTasks.Add(Task.Run(() => _testMonoToStereo.StartAsync(ct), ct));
-            _nodeTasks.Add(Task.Run(() => _demuxer.StartAsync(ct), ct));
-            // ------------------------
-            
-            _nodeTasks.Add(RunOnDedicatedThread(_mixer.StartAsync, ct, $"mixer-{_sessionId}"));
-            
-            _nodeTasks.Add(Task.Factory.StartNew(
-                () => _botSink.StartAsync(ct),
-                ct,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default).Unwrap());
-            
-            // Start DSP metrics push to dashboard
-            // _nodeTasks.Add(Task.Run(() => MetricsLoopAsync(ct), ct));
-            
-            // Wait for all nodes to complete
-            await Task.WhenAll(_nodeTasks);
-            
-            _logger.LogInformation("Audio graph completed for session {SessionId}", _sessionId);
+            await foreach (var frame in _mixer.Output.ReadAllAsync(ct))
+            {
+                ConvertFloatToPcm(frame.Samples.Span, pcmBuf);
+
+                if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                    ArrayPool<float>.Shared.Return(seg.Array);
+
+                _udpServer.SendAudio(_sessionId, _guildId, pcmBuf);
+            }
         }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("Audio graph cancelled for session {SessionId}", _sessionId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Audio graph error for session {SessionId}", _sessionId);
-            throw;
-        }
+        catch (OperationCanceledException) { /* normal */ }
+        catch (Exception ex) { _logger.LogError(ex, "OutputLoop error for session {SessionId}", _sessionId); }
     }
-    
-    private static Task RunOnDedicatedThread(
-        Func<CancellationToken, Task> work,
-        CancellationToken ct,
-        string name,
-        ThreadPriority priority = ThreadPriority.AboveNormal)
+
+    // ── User pipeline factory ─────────────────────────────────────────────────
+
+    private UserPipeline CreatePipeline(ulong userId)
+    {
+        _logger.LogInformation("Creating pipeline for user {UserId} in session {SessionId}", userId, _sessionId);
+        var p = new UserPipeline(userId, _mixer, _configService, _vadModelService, _loggerFactory, _graphCt);
+        p.Start(_tasks); // adds tasks to the shared ConcurrentBag
+        return p;
+    }
+
+    // ── IAsyncDisposable ──────────────────────────────────────────────────────
+
+    public async ValueTask DisposeAsync()
+    {
+        await _cts.CancelAsync();
+        try
+        {
+            // Wait for ALL tasks including dynamically added user pipeline tasks
+            await Task.WhenAll(_tasks).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch { /* best-effort */ }
+        _cts.Dispose();
+        _logger.LogInformation("Audio graph disposed for session {SessionId}", _sessionId);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static Task RunOnDedicatedThread(Func<Task> work, string name)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
+        new Thread(() =>
         {
-            try
-            {
-                work(ct).GetAwaiter().GetResult();
-                tcs.SetResult();
-            }
+            try   { work().GetAwaiter().GetResult(); tcs.SetResult(); }
             catch (OperationCanceledException) { tcs.SetResult(); }
-            catch (Exception ex) { tcs.SetException(ex); }
+            catch (Exception ex)               { tcs.SetException(ex); }
         })
         {
             IsBackground = true,
-            Priority = priority,
-            Name = name
-        };
-        thread.Start();
+            Priority     = ThreadPriority.AboveNormal,
+            Name         = name,
+        }.Start();
         return tcs.Task;
     }
-    
-    private async Task MetricsLoopAsync(CancellationToken ct)
+
+    private static void ConvertFloatToPcm(ReadOnlySpan<float> samples, Span<byte> pcm)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        
-        try
+        var count = Math.Min(samples.Length, pcm.Length / 2);
+        for (var i = 0; i < count; i++)
         {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                try 
-                {
-                    var nodeMetrics = _monitoredNodes
-                        .Select(n => new DspNodeMetrics(n.Name, n.Node.QueueDepth))
-                        .ToList();
-                
-                    var metrics = new DspSessionMetrics(_sessionId, nodeMetrics, _botSink.AverageLatencyMs, DateTime.UtcNow);
-                    await _hub.Clients.All.SendAsync("DspMetricsUpdated", metrics, ct);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogWarning(ex, "Failed to push DSP metrics");
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown
+            var s = (short)(Math.Clamp(samples[i], -1f, 1f) * 32767f);
+            BinaryPrimitives.WriteInt16LittleEndian(pcm[(i * 2)..], s);
         }
     }
-    
-    public async ValueTask DisposeAsync()
+}
+
+/// <summary>
+/// Per-user DSP chain:
+///   source channel → StereoToMono → Resample 48k→16k → VadGate → Resample 16k→48k → MonoToStereo → Mixer
+/// </summary>
+public sealed class UserPipeline
+{
+    private readonly Channel<AudioFrame> _source;
+    private readonly IReadOnlyList<IAudioNode> _nodes;
+    private readonly CancellationToken _ct;
+
+    private const int SamplesPerFrame = 1920; // 48 kHz stereo
+
+    public UserPipeline(
+        ulong userId, MixerNode mixer,
+        BrainConfigService config, SileroVadModelService vadModel,
+        ILoggerFactory lf, CancellationToken ct)
     {
-        _logger.LogInformation("Disposing audio graph for session {SessionId}", _sessionId);
-        
-        await _internalCts.CancelAsync();
-        
-        try
+        _ct = ct;
+
+        _source = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(8)
         {
-            await Task.WhenAll(_nodeTasks).WaitAsync(TimeSpan.FromSeconds(2));
-        }
-        catch (TimeoutException)
+            FullMode     = BoundedChannelFullMode.DropOldest,
+            SingleWriter = true,
+            SingleReader = true,
+        });
+
+        // var stereoToMono = new ChannelConverterNode(
+        //     _source.Reader, monoToStereo: false, lf.CreateLogger<ChannelConverterNode>());
+        //
+        // var resampleDown = new ResamplerNode(
+        //     stereoToMono.Output, 48000, 16000, lf.CreateLogger<ResamplerNode>());
+        //
+        // var vad = new VadGateNode(
+        //     resampleDown.Output,
+        //     new SileroVadWrapper(vadModel.CreateSession()),
+        //     config,
+        //     lf.CreateLogger<VadGateNode>());
+        //
+        // var resampleUp = new ResamplerNode(
+        //     vad.Output, 16000, 48000, lf.CreateLogger<ResamplerNode>());
+        //
+        // var monoToStereo = new ChannelConverterNode(
+        //     resampleUp.Output, monoToStereo: true, lf.CreateLogger<ChannelConverterNode>());
+
+        mixer.AddInput($"user_{userId}", _source.Reader);
+
+        // _nodes = [stereoToMono, resampleDown, vad, resampleUp, monoToStereo];
+        _nodes = [];
+    }
+
+    public void Push(ulong userId, ReadOnlySpan<byte> pcm16BitStereo)
+    {
+        var floats = ArrayPool<float>.Shared.Rent(SamplesPerFrame);
+        for (var i = 0; i < SamplesPerFrame; i++)
         {
-            _logger.LogWarning(
-                "Audio graph nodes did not stop within 2s for session {SessionId}", _sessionId);
+            var s = BinaryPrimitives.ReadInt16LittleEndian(pcm16BitStereo[(i * 2)..]);
+            floats[i] = s / 32768f;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        var frame = new AudioFrame
         {
-            _logger.LogError(ex, "Error waiting for nodes to complete");
+            Samples   = floats.AsMemory(0, SamplesPerFrame),
+            UserId    = userId,
+            Timestamp = DateTime.UtcNow,
+        };
+
+        if (!_source.Writer.TryWrite(frame))
+        {
+            // DropOldest is set, but guard anyway
+            if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                ArrayPool<float>.Shared.Return(seg.Array);
         }
-        
-        _internalCts.Dispose();
-        _logger.LogInformation("Audio graph disposed for session {SessionId}", _sessionId);
-        
-        GC.SuppressFinalize(this);
+    }
+
+    public void Start(ConcurrentBag<Task> taskBag)
+    {
+        foreach (var node in _nodes)
+            taskBag.Add(Task.Factory.StartNew(
+                () => node.StartAsync(_ct),
+                _ct, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap());
     }
 }

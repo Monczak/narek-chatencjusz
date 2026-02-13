@@ -1,6 +1,7 @@
 from typing import List
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     discord_bot_token: str
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
 
+    @computed_field  # type: ignore[misc]
     @property
     def debug_guild_ids(self) -> List[int]:
         s = self.debug_guild_ids_raw.strip()
@@ -22,3 +24,9 @@ class Settings(BaseSettings):
             return [int(x.strip()) for x in s.split(",") if x.strip()]
         except ValueError:
             return []
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def brain_host(self) -> str:
+        """Hostname only, without port — used by the UDP audio transport."""
+        return self.brain_url.split(":")[0]

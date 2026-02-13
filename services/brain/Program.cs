@@ -2,8 +2,10 @@ using BrainService;
 using BrainService.Hubs;
 using BrainService.Services;
 using BrainService.Services.Audio;
+using BrainService.Services.Audio.Transport;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
+using Microsoft.Extensions.Logging.Console;
 using MudBlazor.Services;
 using RedLockNet;
 using RedLockNet.SERedis;
@@ -12,6 +14,10 @@ using StackExchange.Redis;
 ThreadPool.SetMinThreads(250, 250);
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.AddConsole();
+builder.Services.Configure<ConsoleLoggerOptions>(o =>
+    o.QueueFullMode = ConsoleLoggerQueueFullMode.DropWrite);
 
 var valkeyUrl = builder.Configuration.GetValue<string>("Valkey:Url") ?? "localhost:6379";
 var redisConn = ConnectionMultiplexer.Connect(valkeyUrl);
@@ -23,19 +29,22 @@ builder.Services.AddGrpc();
 
 builder.Services.AddHttpClient();
 
+// Audio
 builder.Services.AddSingleton<SileroVadModelService>();
+builder.Services.AddSingleton<UdpAudioServer>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UdpAudioServer>());
 builder.Services.AddSingleton<AudioGraphFactory>();
 
+// Session / state
 builder.Services.AddSingleton<BrainConfigService>();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 builder.Services.AddSingleton<CommandPublisher>();
 builder.Services.AddSingleton<VoiceSessionService>();
-
 builder.Services.AddHostedService<StaleConnectionClearer>();
 
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+// Dashboard
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddMudServices();
 
 var signalR = builder.Services.AddSignalR();
@@ -75,5 +84,9 @@ app.MapHub<DashboardHub>("/hub/dashboard");
 app.UseHttpsRedirection();
 
 app.MapGrpcService<BrainGrpcService>();
+
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+    app.Services.GetRequiredService<AudioGraphFactory>().DisposeAsync().AsTask().GetAwaiter().GetResult());
 
 app.Run();
