@@ -1,6 +1,6 @@
-namespace BrainService.Services;
+using BrainService.Services.Audio.Graph;
 
-using BrainService.Services.Audio;
+namespace BrainService.Services;
 
 public class StaleConnectionClearer(
     IServiceProvider services,

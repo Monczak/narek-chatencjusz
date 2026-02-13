@@ -1,13 +1,13 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace BrainService.Services.Audio;
+namespace BrainService.Services.Audio.Vad;
 
 public class SileroVadWrapper : IDisposable
 {
     private readonly InferenceSession _session;
     
-    // Silero VAD state - flattened shape [2, 1, 128] -> 256 items.
+    // Silero VAD state - flattened shape [2, 1, 128] -> 256 items
     private float[] _state = null!;
     private float[][] _context = null!;
     private int _lastSr;

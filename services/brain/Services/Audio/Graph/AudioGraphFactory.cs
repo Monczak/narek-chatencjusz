@@ -1,15 +1,11 @@
 using System.Collections.Concurrent;
 using BrainService.Services.Audio.Transport;
+using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
 
-namespace BrainService.Services.Audio;
+namespace BrainService.Services.Audio.Graph;
 
-/// <summary>
-/// Owns all running <see cref="SessionAudioGraph"/> instances.
-/// Sessions are started when the bot confirms it has joined a channel
-/// and stopped on disconnect or application shutdown.
-/// </summary>
 public sealed class AudioGraphFactory(
     UdpAudioServer udpServer,
     VoiceSessionService sessionService,
@@ -22,7 +18,7 @@ public sealed class AudioGraphFactory(
     private readonly ConcurrentDictionary<string, (SessionAudioGraph Graph, Task Run, CancellationTokenSource Cts)>
         _active = new();
 
-    public async Task StartSessionAsync(string sessionId, ulong guildId)
+    public void StartSession(string sessionId, ulong guildId)
     {
         if (_active.ContainsKey(sessionId))
         {
@@ -36,7 +32,7 @@ public sealed class AudioGraphFactory(
             return;
         }
 
-        var cts   = new CancellationTokenSource();
+        var cts = new CancellationTokenSource();
         var graph = new SessionAudioGraph(guid, guildId, udpServer, configService, vadModelService, loggerFactory);
 
         udpServer.RegisterSession(guid, graph);
@@ -45,8 +41,7 @@ public sealed class AudioGraphFactory(
         _active[sessionId] = (graph, run, cts);
 
         _logger.LogInformation("Started audio graph for session {SessionId} guild {GuildId}", sessionId, guildId);
-
-        // Detach — RunAsync completes when cancelled; don't await it here
+        
         _ = run.ContinueWith(t =>
         {
             if (t.IsFaulted)
@@ -66,7 +61,9 @@ public sealed class AudioGraphFactory(
         await entry.Graph.DisposeAsync();
 
         if (Guid.TryParse(sessionId, out var guid))
+        {
             udpServer.UnregisterSession(guid);
+        }
 
         entry.Cts.Dispose();
         _logger.LogInformation("Stopped audio graph for session {SessionId}", sessionId);

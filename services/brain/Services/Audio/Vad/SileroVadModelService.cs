@@ -1,7 +1,7 @@
 using Microsoft.ML.OnnxRuntime;
 using SessionOptions = Microsoft.ML.OnnxRuntime.SessionOptions;
 
-namespace BrainService.Services.Audio;
+namespace BrainService.Services.Audio.Vad;
 
 public class SileroVadModelService
 {

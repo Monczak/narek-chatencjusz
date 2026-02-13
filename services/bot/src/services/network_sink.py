@@ -7,7 +7,7 @@ from discord.sinks import Sink
 from services.audio_stream import AudioStreamService
 from services.state import StateService
 
-CHUNK_SIZE = 3840  # 20 ms of stereo audio at 48kHz
+CHUNK_SIZE = 3840 # 20 ms of stereo audio at 48kHz
 SILENCE_FRAME = bytes(CHUNK_SIZE)
 
 def apply_smoothing_fade(prev_pcm: bytes, current_pcm: bytes, fade_samples: int) -> bytes:
@@ -33,7 +33,7 @@ def apply_smoothing_fade(prev_pcm: bytes, current_pcm: bytes, fade_samples: int)
         
     return curr_arr.tobytes()
 
-class GrpcVadAudioSink(Sink):    
+class BufferedStreamAudioSink(Sink):    
     def __init__(
         self, 
         guild: discord.Guild, 

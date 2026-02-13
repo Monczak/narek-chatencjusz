@@ -2,14 +2,11 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
+using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 
 namespace BrainService.Services.Audio.Nodes;
 
-/// <summary>
-/// Single-user VAD gate. Reads 16 kHz mono frames, passes speech through (with pre-roll),
-/// discards silence. The SessionAudioGraph creates one of these per user.
-/// </summary>
 public sealed class VadGateNode(
     ChannelReader<AudioFrame> input,
     SileroVadWrapper vad,
@@ -39,13 +36,17 @@ public sealed class VadGateNode(
         try
         {
             await foreach (var frame in input.ReadAllAsync(ct))
+            {
                 await ProcessFrameAsync(frame, ct);
+            }
         }
-        catch (OperationCanceledException) { /* normal */ }
+        catch (OperationCanceledException)
+        {
+             // Normal shutdown
+        }
         catch (Exception ex) { logger.LogError(ex, "VadGateNode error"); throw; }
         finally
         {
-            // Drain pre-buffer
             while (_preBuffer.TryDequeue(out var f)) ReturnFrame(f);
             _output.Writer.Complete();
         }
@@ -59,12 +60,12 @@ public sealed class VadGateNode(
         while (_sampleBuf.Count >= VadWindowSize)
         {
             var chunk = CollectionsMarshal.AsSpan(_sampleBuf)[..VadWindowSize];
-            var prob  = vad.GetSpeechProbability(chunk);
+            var prob = vad.GetSpeechProbability(chunk);
             _sampleBuf.RemoveRange(0, VadWindowSize);
 
             if (!_isSpeaking && prob >= cfg.StartThreshold)
             {
-                _isSpeaking       = true;
+                _isSpeaking = true;
                 _lastSpeakingFrame = DateTime.UtcNow;
 
                 // Flush pre-roll so speech doesn't start abruptly
@@ -76,8 +77,7 @@ public sealed class VadGateNode(
                 _lastSpeakingFrame = DateTime.UtcNow;
             }
         }
-
-        // Check for end-of-speech silence
+        
         if (_isSpeaking &&
             DateTime.UtcNow - _lastSpeakingFrame > TimeSpan.FromMilliseconds(cfg.SilenceDurationMs))
         {
@@ -90,7 +90,6 @@ public sealed class VadGateNode(
         }
         else
         {
-            // Maintain a rolling pre-buffer
             if (_preBuffer.Count >= cfg.PreBufferFrameCount)
                 ReturnFrame(_preBuffer.Dequeue());
             _preBuffer.Enqueue(frame);

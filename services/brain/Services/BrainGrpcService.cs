@@ -1,5 +1,5 @@
 using BrainService.Proto;
-using BrainService.Services.Audio;
+using BrainService.Services.Audio.Graph;
 using BrainService.Services.Session;
 using Grpc.Core;
 
@@ -112,7 +112,8 @@ public class BrainGrpcService(
                 request.Guild, request.NodeId, request.Channel, sessionId);
             await voiceSessionService.UpdateSessionChannelAsync(
                 request.Guild, request.Channel, sessionId);
-            await audioGraphFactory.StartSessionAsync(sessionId, request.Guild.Id);
+            
+            audioGraphFactory.StartSession(sessionId, request.Guild.Id);
 
             logger.LogInformation("Graph started for session {SessionId} guild {GuildId}",
                 sessionId, request.Guild.Id);
@@ -160,11 +161,8 @@ public class BrainGrpcService(
             {
                 foreach (var guild in activeGuilds)
                 {
-                    // Mark session as unstable in the state machine
                     await voiceSessionService.HandleNodeDisconnectAsync(guild);
-
-                    // Stop the audio graph — the session is now unstable and no
-                    // bot node is connected to feed it audio
+                    
                     var sessionId = await nodeRegistry.GetSessionForGuildAsync(guild.Id);
                     if (!string.IsNullOrEmpty(sessionId))
                     {

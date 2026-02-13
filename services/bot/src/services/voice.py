@@ -4,7 +4,7 @@ import logging
 from typing import Tuple
 from generated import brain_pb2, brain_pb2_grpc
 from services.audio_stream import AudioStreamService
-from services.network_sink import GrpcVadAudioSink
+from services.network_sink import BufferedStreamAudioSink
 from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
@@ -120,7 +120,7 @@ class VoiceService:
             if guild.voice_client:
                 if not guild.voice_client.recording:
                     guild.voice_client.start_recording(
-                        GrpcVadAudioSink(guild, self.audio_stream, self.state),
+                        BufferedStreamAudioSink(guild, self.audio_stream, self.state),
                         self._recording_finished_callback
                     )
                     logging.info(f"Started recording in Channel {channel_to_join.id}")

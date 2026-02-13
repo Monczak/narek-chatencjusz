@@ -1,8 +1,9 @@
 using BrainService;
 using BrainService.Hubs;
 using BrainService.Services;
-using BrainService.Services.Audio;
+using BrainService.Services.Audio.Graph;
 using BrainService.Services.Audio.Transport;
+using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
 using Microsoft.Extensions.Logging.Console;

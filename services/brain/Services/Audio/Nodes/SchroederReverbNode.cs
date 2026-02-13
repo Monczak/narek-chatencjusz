@@ -1,57 +1,39 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 
 namespace BrainService.Services.Audio.Nodes;
 
-public class SchroederReverbNode : IAudioNode
+public class SchroederReverbNode(ChannelReader<AudioFrame> input, ILoggerFactory loggerFactory)
+    : IAudioNode
 {
-    private readonly ChannelReader<AudioFrame> _input;
-    private readonly Channel<AudioFrame> _output;
-    private readonly ILogger _logger;
-
-    // Audio settings
-    private const int SampleRate = 48000;
-    private const int Channels = 2;
+    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(2)
+    {
+        FullMode = BoundedChannelFullMode.Wait
+    });
+    private readonly ILogger _logger = loggerFactory.CreateLogger<SchroederReverbNode>();
     
     // Reverb Parameters
     private const float WetMix = 0.35f; // 35% Reverb
     private const float DryMix = 0.8f;  
     
     // Filters
-    private readonly CombFilter[] _combFilters;
-    private readonly AllPassFilter[] _allPassFilters;
+    private readonly CombFilter[] _combFilters =
+    [
+        new(delaySamples: 1426, feedback: 0.773f), // ~29.7ms
+        new(delaySamples: 1781, feedback: 0.802f), // ~37.1ms
+        new(delaySamples: 1973, feedback: 0.753f), // ~41.1ms
+        new(delaySamples: 2098, feedback: 0.733f)  // ~43.7ms
+    ];
+    private readonly AllPassFilter[] _allPassFilters =
+    [
+        new(delaySamples: 240, feedback: 0.7f), // ~5ms
+        new(delaySamples: 82,  feedback: 0.7f)  // ~1.7ms
+    ];
 
     public ChannelReader<AudioFrame> Output => _output.Reader;
     public int QueueDepth => _output.Reader.Count;
-
-    public SchroederReverbNode(ChannelReader<AudioFrame> input, ILoggerFactory loggerFactory)
-    {
-        _input = input;
-        _logger = loggerFactory.CreateLogger<SchroederReverbNode>();
-        
-        _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(2)
-        {
-            FullMode = BoundedChannelFullMode.Wait
-        });
-
-        // Initialize Schroeder Topology (Tuned for 48kHz)
-        // 4 Parallel Comb Filters
-        _combFilters = 
-        [
-            new CombFilter(delaySamples: 1426, feedback: 0.773f), // ~29.7ms
-            new CombFilter(delaySamples: 1781, feedback: 0.802f), // ~37.1ms
-            new CombFilter(delaySamples: 1973, feedback: 0.753f), // ~41.1ms
-            new CombFilter(delaySamples: 2098, feedback: 0.733f)  // ~43.7ms
-        ];
-
-        // 2 Series All-Pass Filters
-        _allPassFilters = 
-        [
-            new AllPassFilter(delaySamples: 240, feedback: 0.7f), // ~5ms
-            new AllPassFilter(delaySamples: 82,  feedback: 0.7f)  // ~1.7ms
-        ];
-    }
 
     public async Task StartAsync(CancellationToken ct)
     {
@@ -59,9 +41,9 @@ public class SchroederReverbNode : IAudioNode
         
         try
         {
-            while (await _input.WaitToReadAsync(ct))
+            while (await input.WaitToReadAsync(ct))
             {
-                while (_input.TryRead(out var frame))
+                while (input.TryRead(out var frame))
                 {
                     await ProcessFrameAsync(frame, ct);
                 }
@@ -83,69 +65,51 @@ public class SchroederReverbNode : IAudioNode
         var inputSamples = inputFrame.Samples.Span;
         var sampleCount = inputSamples.Length; // Stereo samples
         
-        // Rent buffer for output
         var outputBuffer = ArrayPool<float>.Shared.Rent(sampleCount);
         var outputSpan = outputBuffer.AsSpan(0, sampleCount);
-
-        // Process samples (Interleaved Stereo)
-        for (int i = 0; i < sampleCount; i += 2)
+        
+        for (var i = 0; i < sampleCount; i += 2)
         {
-            float inputL = inputSamples[i];
-            float inputR = inputSamples[i + 1];
-
-            // 1. Create Mono Mix for Reverb Engine
-            float monoInput = (inputL + inputR) * 0.5f;
-
-            // 2. Process Parallel Comb Filters
-            float combSum = 0f;
+            var inputL = inputSamples[i];
+            var inputR = inputSamples[i + 1];
+            
+            var monoInput = (inputL + inputR) * 0.5f;
+            
+            var combSum = 0f;
             foreach (var comb in _combFilters)
             {
                 combSum += comb.Process(monoInput);
             }
-
-            // 3. Process Series All-Pass Filters
-            float wetSignal = combSum;
+            
+            var wetSignal = combSum;
             foreach (var apf in _allPassFilters)
             {
                 wetSignal = apf.Process(wetSignal);
             }
-
-            // 4. Mix Wet + Dry and assign to stereo output
-            // (We apply the same reverb tail to both channels here)
-            outputSpan[i]     = (inputL * DryMix) + (wetSignal * WetMix);
-            outputSpan[i + 1] = (inputR * DryMix) + (wetSignal * WetMix);
+            
+            outputSpan[i] = inputL * DryMix + wetSignal * WetMix;
+            outputSpan[i + 1] = inputR * DryMix + wetSignal * WetMix;
         }
 
-        var outputFrame = new AudioFrame
-        {
-            Samples = outputBuffer.AsMemory(0, sampleCount),
-            Timestamp = inputFrame.Timestamp,
-            UserId = inputFrame.UserId
-        };
+        var outputFrame = inputFrame with { Samples = outputBuffer.AsMemory(0, sampleCount) };
 
         await _output.Writer.WriteAsync(outputFrame, ct);
         
-        // Return *input* buffer to pool if it was rented upstream (standard pattern in your Mixer)
-        // Note: In your current code, Mixer rents a buffer, passing it here. 
-        // We just rented a NEW buffer for output. We must responsibly handle the memory.
-        // Assuming upstream passes ownership:
-        if (System.Runtime.InteropServices.MemoryMarshal.TryGetArray(inputFrame.Samples, out var segment) && segment.Array != null)
+        if (MemoryMarshal.TryGetArray(inputFrame.Samples, out var segment) && segment.Array != null)
         {
             ArrayPool<float>.Shared.Return(segment.Array);
         }
     }
     
-    // Inner DSP Classes
-    
     private class CombFilter(int delaySamples, float feedback)
     {
         private readonly float[] _buffer = new float[delaySamples];
-        private int _index = 0;
+        private int _index;
 
         public float Process(float input)
         {
-            float delayed = _buffer[_index];
-            float output = input + (delayed * feedback);
+            var delayed = _buffer[_index];
+            var output = input + delayed * feedback;
             
             _buffer[_index] = output;
             _index = (_index + 1) % _buffer.Length;
@@ -157,13 +121,13 @@ public class SchroederReverbNode : IAudioNode
     private class AllPassFilter(int delaySamples, float feedback)
     {
         private readonly float[] _buffer = new float[delaySamples];
-        private int _index = 0;
+        private int _index;
 
         public float Process(float input)
         {
-            float delayed = _buffer[_index];
-            float output = -input + delayed;
-            float feedbackOutput = input + (output * feedback);
+            var delayed = _buffer[_index];
+            var output = -input + delayed;
+            var feedbackOutput = input + output * feedback;
             
             _buffer[_index] = feedbackOutput;
             _index = (_index + 1) % _buffer.Length;
