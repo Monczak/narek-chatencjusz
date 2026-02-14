@@ -1,5 +1,5 @@
 using BrainService.Domain.Discord;
-using BrainService.Proto;
+using BrainService.Proto.Brain;
 using Stateless;
 
 namespace BrainService.Domain.Session;

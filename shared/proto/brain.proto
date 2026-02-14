@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option csharp_namespace = "BrainService.Proto";
+option csharp_namespace = "BrainService.Proto.Brain";
 
 package brain;
 

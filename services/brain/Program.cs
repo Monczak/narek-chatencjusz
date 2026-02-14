@@ -1,12 +1,14 @@
 using BrainService;
 using BrainService.Hubs;
 using BrainService.Services;
+using BrainService.Services.Asr;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
 using Microsoft.Extensions.Logging.Console;
+using MongoDB.Driver;
 using MudBlazor.Services;
 using RedLockNet;
 using RedLockNet.SERedis;
@@ -20,14 +22,27 @@ builder.Logging.AddConsole();
 builder.Services.Configure<ConsoleLoggerOptions>(o =>
     o.QueueFullMode = ConsoleLoggerQueueFullMode.DropWrite);
 
+// Valkey
 var valkeyUrl = builder.Configuration.GetValue<string>("Valkey:Url") ?? "localhost:6379";
 var redisConn = ConnectionMultiplexer.Connect(valkeyUrl);
 builder.Services.AddSingleton<IConnectionMultiplexer>(redisConn);
 builder.Services.AddSingleton<IDistributedLockFactory>(sp => RedLockFactory.Create([redisConn]));
 
+// Mongo
+var mongoUrl = builder.Configuration.GetValue<string>("Mongo:Url") ?? "mongodb://localhost:27017";
+var mongoDbName = builder.Configuration.GetValue<string>("Mongo:Database") ?? "narek";
+var mongoClient = new MongoClient(mongoUrl);
+builder.Services.AddSingleton<IMongoClient>(mongoClient);
+builder.Services.AddSingleton<IMongoDatabase>(_ => mongoClient.GetDatabase(mongoDbName));
+
+// ASR
+var asrUrl = builder.Configuration.GetValue<string>("Asr:Url") ?? "localhost:6060";
+builder.Services.AddSingleton<AsrGrpcClient>(sp =>
+    new AsrGrpcClient(asrUrl, sp.GetRequiredService<ILogger<AsrGrpcClient>>()));
+
+// Comms / API
 builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
-
 builder.Services.AddHttpClient();
 
 // Audio
@@ -41,6 +56,7 @@ builder.Services.AddSingleton<BrainConfigService>();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 builder.Services.AddSingleton<CommandPublisher>();
+builder.Services.AddSingleton<VoiceSessionHistoryService>();
 builder.Services.AddSingleton<VoiceSessionService>();
 builder.Services.AddHostedService<StaleConnectionClearer>();
 

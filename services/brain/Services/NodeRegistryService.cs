@@ -1,5 +1,5 @@
 using System.Text.Json;
-using BrainService.Proto;
+using BrainService.Proto.Brain;
 using RedLockNet;
 using StackExchange.Redis;
 

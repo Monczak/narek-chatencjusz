@@ -1,4 +1,4 @@
-using BrainService.Proto;
+using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Session;
 using Grpc.Core;

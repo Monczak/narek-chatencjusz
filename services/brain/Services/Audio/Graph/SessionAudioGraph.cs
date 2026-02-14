@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
+using BrainService.Services.Asr;
 using BrainService.Services.Audio.Nodes;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
@@ -23,6 +24,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     private readonly BrainConfigService _configService;
     private readonly SileroVadModelService _vadModelService;
     private readonly VoiceSessionService _voiceSessionService;
+    private readonly AsrGrpcClient _asrClient;
+    private readonly VoiceSessionHistoryService _historyService;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionAudioGraph> _logger;
     
@@ -38,11 +41,14 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     private double _averageLatencyMs;
 
     public SessionAudioGraph(
-        Guid sessionId, ulong guildId,
+        Guid sessionId, 
+        ulong guildId,
         UdpAudioServer udpServer,
         BrainConfigService configService,
         SileroVadModelService vadModelService,
         VoiceSessionService voiceSessionService,
+        AsrGrpcClient asrClient,
+        VoiceSessionHistoryService historyService,
         ILoggerFactory loggerFactory,
         IHubContext<DashboardHub> hubContext)
     {
@@ -54,6 +60,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         _configService = configService;
         _vadModelService = vadModelService;
         _voiceSessionService = voiceSessionService;
+        _asrClient = asrClient;
+        _historyService = historyService;
 
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<SessionAudioGraph>();
@@ -135,10 +143,13 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         _logger.LogInformation("Creating pipeline for user {UserId} in session {SessionId}", userId, _sessionId);
 
         var pipeline = new UserPipeline(
+            _sessionId.ToString(),
             userId,
             _mixer,
             _configService,
             _vadModelService,
+            _asrClient,
+            _historyService,
             OnSpeakingStateChanged,
             _loggerFactory,
             _graphCt

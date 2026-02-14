@@ -49,6 +49,16 @@ services:
     volumes:
       - asr_model_cache:/root/.cache/huggingface
 
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - internal
+
   valkey:
     image: valkey/valkey:9-alpine
     restart: unless-stopped
@@ -62,3 +72,4 @@ networks:
 
 volumes:
   asr_model_cache:
+  mongo_data:

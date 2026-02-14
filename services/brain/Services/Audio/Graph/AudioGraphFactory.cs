@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using BrainService.Hubs;
+using BrainService.Services.Asr;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
@@ -13,6 +14,8 @@ public sealed class AudioGraphFactory(
     VoiceSessionService sessionService,
     BrainConfigService configService,
     SileroVadModelService vadModelService,
+    AsrGrpcClient asrClient,
+    VoiceSessionHistoryService historyService,
     ILoggerFactory loggerFactory,
     IHubContext<DashboardHub> hubContext) : IAsyncDisposable
 {
@@ -43,6 +46,8 @@ public sealed class AudioGraphFactory(
             configService,
             vadModelService,
             sessionService,
+            asrClient,
+            historyService,
             loggerFactory,
             hubContext
         );

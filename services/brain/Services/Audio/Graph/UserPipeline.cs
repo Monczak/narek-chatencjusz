@@ -4,9 +4,11 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
+using BrainService.Services.Asr;
 using BrainService.Services.Audio.Nodes;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
+using BrainService.Services.Session;
 
 namespace BrainService.Services.Audio.Graph;
 
@@ -20,10 +22,13 @@ public sealed class UserPipeline
     private const int SamplesPerFrame = 1920; // 48 kHz stereo float
 
     public UserPipeline(
+        string sessionId,
         ulong userId,
         MixerNode mixer,
         BrainConfigService config,
         SileroVadModelService vadModel,
+        AsrGrpcClient asrClient,
+        VoiceSessionHistoryService historyService,
         Action<bool>? speakingStateChanged,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
@@ -50,12 +55,27 @@ public sealed class UserPipeline
             loggerFactory.CreateLogger<ResamplerNode>()
         );
         
+        AsrTapNode? asrTap = null;
+        
         var vad = new VadGateNode(
             resampleDown.Output,
             new SileroVadWrapper(vadModel.CreateSession()),
             config,
             loggerFactory.CreateLogger<VadGateNode>(),
-            speakingStateChanged
+            speakingStateChanged: isSpeaking =>
+            {
+                asrTap?.OnSpeakingStateChanged(isSpeaking);
+                speakingStateChanged?.Invoke(isSpeaking);
+            }
+        );
+
+        asrTap = new AsrTapNode(
+            vad.Output,
+            asrClient,
+            historyService,
+            sessionId,
+            userId,
+            loggerFactory.CreateLogger<AsrTapNode>()
         );
         
         var resampleUp = new ResamplerNode(
@@ -73,7 +93,7 @@ public sealed class UserPipeline
         
         mixer.AddInput($"user_{userId}", monoToStereo.Output);
 
-        Nodes = [stereoToMono, resampleDown, vad, resampleUp, monoToStereo];
+        Nodes = [stereoToMono, resampleDown, vad, asrTap, resampleUp, monoToStereo];
     }
 
     public void Push(ulong userId, ReadOnlySpan<byte> pcm16BitStereo)

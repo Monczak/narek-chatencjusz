@@ -1,7 +1,8 @@
 using System.Text.Json;
+using BrainService.Domain.Discord;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
-using BrainService.Proto;
+using BrainService.Proto.Brain;
 using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
 using StackExchange.Redis;
@@ -14,6 +15,7 @@ public class VoiceSessionService(
     ILogger<VoiceSessionService> logger,
     ILoggerFactory loggerFactory,
     NodeRegistryService nodeRegistry,
+    VoiceSessionHistoryService historyService,
     IHubContext<DashboardHub> hubContext
 ) 
 {
@@ -123,7 +125,8 @@ public class VoiceSessionService(
                 }
                 machine.ProcessEvent(evt);
             },
-            TimeSpan.FromSeconds(5)
+            TimeSpan.FromSeconds(5),
+            evt
         );
     }
 
@@ -144,7 +147,8 @@ public class VoiceSessionService(
                 return Task.FromResult(loadedState)!;
             },
             machine => machine.HandleNodeDisconnected(),
-            TimeSpan.FromSeconds(2)
+            TimeSpan.FromSeconds(2),
+            null
         );
     }
 
@@ -166,7 +170,8 @@ public class VoiceSessionService(
                 return Task.FromResult(loadedState)!;
             },
             machine => machine.UpdateChannel(channel),
-            TimeSpan.FromSeconds(2)
+            TimeSpan.FromSeconds(2),
+            null
         );
     }
 
@@ -178,7 +183,8 @@ public class VoiceSessionService(
         await ExecuteSessionTransactionAsync(sessionId,
             Task.FromResult,
             machine => machine.UpdateUserSpeaking(userId, isSpeaking),
-            TimeSpan.FromSeconds(1)
+            TimeSpan.FromSeconds(1),
+            null
         );
     }
     
@@ -186,7 +192,8 @@ public class VoiceSessionService(
         string? sessionId,
         Func<VoiceSessionState?, Task<VoiceSessionState?>> stateResolver,
         Action<VoiceSessionStateMachine> stateProcessAction,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        VoiceSessionEvent? sourceEvent)
     {
         // For new sessions, generate ID here if not provided
         sessionId ??= Guid.NewGuid().ToString();
@@ -225,6 +232,8 @@ public class VoiceSessionService(
                 var newJson = JsonSerializer.Serialize(machine.State);
                 await _db.StringSetAsync(dataKey, newJson, TimeSpan.FromHours(24));
                 await hubContext.Clients.All.SendAsync("SessionUpdated", machine.State);
+
+                _ = WriteHistoryAsync(machine.State, sourceEvent);
                 
                 if (machine.State.MachineState == VoiceSessionMachineState.Ended)
                 {
@@ -236,6 +245,41 @@ public class VoiceSessionService(
         {
             logger.LogError(ex, "Error processing session transaction for session {SessionId}", sessionId);
             throw;
+        }
+    }
+
+    private async Task WriteHistoryAsync(VoiceSessionState state, VoiceSessionEvent? evt)
+    {
+        try
+        {
+            switch (state.MachineState)
+            {
+                case VoiceSessionMachineState.Idle when evt?.SessionUpdate?.ChangeType == SessionUpdate.Types.ChangeType.Started:
+                    await historyService.EnsureSessionAsync(state);
+                    break;
+
+                case VoiceSessionMachineState.Ended:
+                    await historyService.MarkSessionEndedAsync(state.SessionId);
+                    break;
+            }
+
+            if (evt?.UserState != null)
+            {
+                var user = new User(evt.UserState.User.Id, evt.UserState.User.DisplayName);
+                switch (evt.UserState.ChangeType)
+                {
+                    case UserVoiceStateUpdate.Types.ChangeType.Joined:
+                        await historyService.AppendUserJoinedAsync(state.SessionId, user.UserId, user.DisplayName);
+                        break;
+                    case UserVoiceStateUpdate.Types.ChangeType.Left:
+                        await historyService.AppendUserLeftAsync(state.SessionId, user.UserId, user.DisplayName);
+                        break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to write history for session {SessionId}", state.SessionId);
         }
     }
 }

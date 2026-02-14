@@ -1,4 +1,4 @@
-using BrainService.Proto;
+using BrainService.Proto.Brain;
 using Google.Protobuf;
 using StackExchange.Redis;
 
