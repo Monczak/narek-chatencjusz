@@ -5,10 +5,13 @@ using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 using BrainService.Domain.Session;
+using BrainService.Hubs;
 using BrainService.Services.Audio.Nodes;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
+using BrainService.Services.Session;
+using Microsoft.AspNetCore.SignalR;
 
 namespace BrainService.Services.Audio.Graph;
 
@@ -19,8 +22,11 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     private readonly UdpAudioServer _udpServer;
     private readonly BrainConfigService _configService;
     private readonly SileroVadModelService _vadModelService;
+    private readonly VoiceSessionService _voiceSessionService;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionAudioGraph> _logger;
+    
+    private readonly IHubContext<DashboardHub> _hubContext;
 
     private readonly MixerNode _mixer;
     private readonly CancellationTokenSource _cts = new();
@@ -29,12 +35,16 @@ public sealed class SessionAudioGraph : IAsyncDisposable
 
     private CancellationToken _graphCt; // Set in RunAsync, used by CreatePipeline
 
+    private double _averageLatencyMs;
+
     public SessionAudioGraph(
         Guid sessionId, ulong guildId,
         UdpAudioServer udpServer,
         BrainConfigService configService,
         SileroVadModelService vadModelService,
-        ILoggerFactory loggerFactory)
+        VoiceSessionService voiceSessionService,
+        ILoggerFactory loggerFactory,
+        IHubContext<DashboardHub> hubContext)
     {
         _sessionId = sessionId;
         _guildId = guildId;
@@ -43,9 +53,12 @@ public sealed class SessionAudioGraph : IAsyncDisposable
 
         _configService = configService;
         _vadModelService = vadModelService;
+        _voiceSessionService = voiceSessionService;
 
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<SessionAudioGraph>();
+        
+        _hubContext = hubContext;
 
         _mixer = new MixerNode(loggerFactory.CreateLogger<MixerNode>());
 
@@ -63,6 +76,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
                 () => OutputLoopAsync(_graphCt),
                 _graphCt, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap()
         );
+        
+        _tasks.Add(Task.Run(() => MetricsLoopAsync(_graphCt), _graphCt));
 
         _logger.LogInformation("Audio graph running for session {SessionId} guild {GuildId}", _sessionId, _guildId);
 
@@ -91,6 +106,12 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         {
             await foreach (var frame in _mixer.Output.ReadAllAsync(ct))
             {
+                var latencyMs = (DateTime.UtcNow - frame.Timestamp).TotalMilliseconds;
+                
+                _averageLatencyMs = _averageLatencyMs == 0 
+                    ? latencyMs 
+                    : _averageLatencyMs * 0.9 + latencyMs * 0.1;
+                
                 ConvertFloatToPcm(frame.Samples.Span, pcmBuf);
 
                 if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
@@ -112,10 +133,72 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     private UserPipeline CreatePipeline(ulong userId)
     {
         _logger.LogInformation("Creating pipeline for user {UserId} in session {SessionId}", userId, _sessionId);
-        var pipeline = new UserPipeline(userId, _mixer, _configService, _vadModelService, _loggerFactory, _graphCt);
+
+        var pipeline = new UserPipeline(
+            userId,
+            _mixer,
+            _configService,
+            _vadModelService,
+            OnSpeakingStateChanged,
+            _loggerFactory,
+            _graphCt
+        );
+        
         pipeline.Start(_tasks);
 
         return pipeline;
+
+        void OnSpeakingStateChanged(bool isSpeaking)
+        {
+            _ = _voiceSessionService.UpdateUserSpeakingStatusAsync(_sessionId.ToString(), _guildId, userId, isSpeaking);
+        }
+    }
+    
+    public DspSessionMetrics GetMetrics()
+    {
+        var nodeMetrics = new List<DspNodeMetrics>
+        {
+            new("Mixer", _mixer.Output.Count)
+        };
+
+        foreach (var (userId, pipeline) in _pipelines)
+        {
+            var i = 1;
+            foreach (var node in pipeline.Nodes)
+            {
+                // Uniquely identify each node per user
+                nodeMetrics.Add(new DspNodeMetrics($"User_{userId}_{node.GetType().Name}_{i++}", node.QueueDepth));
+            }
+        }
+
+        return new DspSessionMetrics(
+            _sessionId.ToString(),
+            nodeMetrics,
+            _averageLatencyMs,
+            DateTime.UtcNow
+        );
+    }
+    
+    private async Task MetricsLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+            
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var metrics = GetMetrics();
+                await _hubContext.Clients.All.SendAsync("DspMetricsUpdated", metrics, cancellationToken: ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Metrics loop error for session {SessionId}", _sessionId);
+        }
     }
 
     public async ValueTask DisposeAsync()

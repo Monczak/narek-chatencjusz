@@ -8,10 +8,19 @@ namespace BrainService.Services.Audio.Nodes;
 
 public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
 {
-    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(
-        new BoundedChannelOptions(50) { FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(50)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest
+    });
     
-    private readonly Dictionary<string, (ChannelReader<AudioFrame> Reader, List<float> Buffer)> _inputs = new();
+    private sealed class MixerState
+    {
+        public required ChannelReader<AudioFrame> Reader { get; init; }
+        public List<float> Buffer { get; } = new(FrameSamples * 4);
+        public DateTime LastTimestamp { get; set; } = DateTime.UtcNow;
+    }
+    
+    private readonly Dictionary<string, MixerState> _inputs = new();
     private readonly Lock _inputsLock = new();
     
     private const int FrameSamples = 1920; // 20 ms of stereo 48 kHz float
@@ -22,7 +31,7 @@ public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     {
         lock (_inputsLock)
         {
-            _inputs.TryAdd(name, (reader, new List<float>(FrameSamples * 4)));
+            _inputs.TryAdd(name, new MixerState { Reader = reader });
             logger.LogDebug("Mixer: added input '{Name}'", name);
         }
     }
@@ -68,14 +77,24 @@ public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
     
     private void ProcessTick()
     {
+        DateTime? oldestTimestamp = null;
+
         lock (_inputsLock)
         {
-            foreach (var (_, (reader, buf)) in _inputs)
+            foreach (var input in _inputs.Values)
             {
-                while (reader.TryRead(out var frame))
+                while (input.Reader.TryRead(out var frame))
                 {
-                    buf.AddRange(frame.Samples.Span);
+                    input.LastTimestamp = frame.Timestamp;
+                    input.Buffer.AddRange(frame.Samples.Span);
                     ReturnFrame(frame);
+                }
+
+                if (input.Buffer.Count > 0)
+                {
+                    // Find the oldest timestamp among all active buffers
+                    if (oldestTimestamp == null || input.LastTimestamp < oldestTimestamp)
+                        oldestTimestamp = input.LastTimestamp;
                 }
             }
         }
@@ -85,28 +104,36 @@ public sealed class MixerNode(ILogger<MixerNode> logger) : IAudioNode
         
         lock (_inputsLock)
         {
-            foreach (var (_, (_, buf)) in _inputs)
+            foreach (var input in _inputs.Values)
             {
-                var avail = Math.Min(buf.Count, FrameSamples);
+                var avail = Math.Min(input.Buffer.Count, FrameSamples);
                 if (avail == 0) continue;
 
-                var span = CollectionsMarshal.AsSpan(buf);
+                var span = CollectionsMarshal.AsSpan(input.Buffer);
                 for (var i = 0; i < avail; i++)
                     mix[i] = Math.Clamp(mix[i] + span[i], -1f, 1f);
 
-                buf.RemoveRange(0, avail);
+                input.Buffer.RemoveRange(0, avail);
             }
-        } 
+        }
 
-        var outFrame = new AudioFrame { Samples = mix.AsMemory(0, FrameSamples), Timestamp = DateTime.UtcNow };
-        
+        var outFrame = new AudioFrame 
+        { 
+            Samples = mix.AsMemory(0, FrameSamples), 
+            Timestamp = oldestTimestamp ?? DateTime.UtcNow 
+        };
+
         if (!_output.Writer.TryWrite(outFrame))
+        {
             ArrayPool<float>.Shared.Return(mix);
+        }
     }
 
     private static void ReturnFrame(AudioFrame frame)
     {
         if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+        {
             ArrayPool<float>.Shared.Return(seg.Array);
+        }
     }
 }

@@ -13,9 +13,10 @@ namespace BrainService.Services.Audio.Graph;
 public sealed class UserPipeline
 {
     private readonly Channel<AudioFrame> _source;
-    private readonly IReadOnlyList<IAudioNode> _nodes;
     private readonly CancellationToken _ct;
 
+    public IReadOnlyList<IAudioNode> Nodes { get; }
+    
     private const int SamplesPerFrame = 1920; // 48 kHz stereo float
 
     public UserPipeline(
@@ -23,7 +24,8 @@ public sealed class UserPipeline
         MixerNode mixer,
         BrainConfigService config,
         SileroVadModelService vadModel,
-        ILoggerFactory lf,
+        Action<bool>? speakingStateChanged,
+        ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         _ct = ct;
@@ -38,39 +40,40 @@ public sealed class UserPipeline
         var stereoToMono = new ChannelConverterNode(
             _source.Reader,
             monoToStereo: false,
-            lf.CreateLogger<ChannelConverterNode>()
+            loggerFactory.CreateLogger<ChannelConverterNode>()
         );
         
         var resampleDown = new ResamplerNode(
             stereoToMono.Output,
             48000,
             16000,
-            lf.CreateLogger<ResamplerNode>()
+            loggerFactory.CreateLogger<ResamplerNode>()
         );
         
         var vad = new VadGateNode(
             resampleDown.Output,
             new SileroVadWrapper(vadModel.CreateSession()),
             config,
-            lf.CreateLogger<VadGateNode>()
+            loggerFactory.CreateLogger<VadGateNode>(),
+            speakingStateChanged
         );
         
         var resampleUp = new ResamplerNode(
             vad.Output,
             16000,
             48000,
-            lf.CreateLogger<ResamplerNode>()
+            loggerFactory.CreateLogger<ResamplerNode>()
         );
         
         var monoToStereo = new ChannelConverterNode(
             resampleUp.Output,
             monoToStereo: true,
-            lf.CreateLogger<ChannelConverterNode>()
+            loggerFactory.CreateLogger<ChannelConverterNode>()
         );
         
         mixer.AddInput($"user_{userId}", monoToStereo.Output);
 
-        _nodes = [stereoToMono, resampleDown, vad, resampleUp, monoToStereo];
+        Nodes = [stereoToMono, resampleDown, vad, resampleUp, monoToStereo];
     }
 
     public void Push(ulong userId, ReadOnlySpan<byte> pcm16BitStereo)
@@ -100,7 +103,7 @@ public sealed class UserPipeline
 
     public void Start(ConcurrentBag<Task> taskBag)
     {
-        foreach (var node in _nodes)
+        foreach (var node in Nodes)
         {
             taskBag.Add(Task.Factory.StartNew(
                     () => node.StartAsync(_ct),

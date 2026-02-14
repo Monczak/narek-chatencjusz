@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using BrainService.Hubs;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Session;
+using Microsoft.AspNetCore.SignalR;
 
 namespace BrainService.Services.Audio.Graph;
 
@@ -11,7 +13,8 @@ public sealed class AudioGraphFactory(
     VoiceSessionService sessionService,
     BrainConfigService configService,
     SileroVadModelService vadModelService,
-    ILoggerFactory loggerFactory) : IAsyncDisposable
+    ILoggerFactory loggerFactory,
+    IHubContext<DashboardHub> hubContext) : IAsyncDisposable
 {
     private readonly ILogger<AudioGraphFactory> _logger = loggerFactory.CreateLogger<AudioGraphFactory>();
 
@@ -33,7 +36,16 @@ public sealed class AudioGraphFactory(
         }
 
         var cts = new CancellationTokenSource();
-        var graph = new SessionAudioGraph(guid, guildId, udpServer, configService, vadModelService, loggerFactory);
+        var graph = new SessionAudioGraph(
+            guid,
+            guildId,
+            udpServer,
+            configService,
+            vadModelService,
+            sessionService,
+            loggerFactory,
+            hubContext
+        );
 
         udpServer.RegisterSession(guid, graph);
 

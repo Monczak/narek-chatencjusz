@@ -11,8 +11,8 @@ public sealed class VadGateNode(
     ChannelReader<AudioFrame> input,
     SileroVadWrapper vad,
     BrainConfigService config,
-    ILogger<VadGateNode> logger)
-    : IAudioNode
+    ILogger<VadGateNode> logger,
+    Action<bool>? speakingStateChanged = null) : IAudioNode
 {
     private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(8)
     {
@@ -35,9 +35,51 @@ public sealed class VadGateNode(
     {
         try
         {
-            await foreach (var frame in input.ReadAllAsync(ct))
+            while (!ct.IsCancellationRequested)
             {
-                await ProcessFrameAsync(frame, ct);
+                bool hasData;
+
+                if (_isSpeaking)
+                {
+                    var cfg = config.Current.Vad;
+                    var timeSinceLast = DateTime.UtcNow - _lastSpeakingFrame;
+                    var timeout = TimeSpan.FromMilliseconds(cfg.SilenceDurationMs) - timeSinceLast;
+                    
+                    if (timeout <= TimeSpan.Zero)
+                    {
+                        _isSpeaking = false;
+                        speakingStateChanged?.Invoke(false);
+                        continue; 
+                    }
+                    
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(timeout);
+
+                    try
+                    {
+                        hasData = await input.WaitToReadAsync(timeoutCts.Token);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        _isSpeaking = false;
+                        speakingStateChanged?.Invoke(_isSpeaking);
+                        continue;
+                    }
+                }
+                else
+                {
+                    hasData = await input.WaitToReadAsync(ct);
+                }
+
+                if (!hasData)
+                {
+                    break;
+                }
+                
+                while (input.TryRead(out var frame))
+                {
+                    await ProcessFrameAsync(frame, ct);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -66,6 +108,7 @@ public sealed class VadGateNode(
             if (!_isSpeaking && prob >= cfg.StartThreshold)
             {
                 _isSpeaking = true;
+                speakingStateChanged?.Invoke(_isSpeaking);
                 _lastSpeakingFrame = DateTime.UtcNow;
 
                 // Flush pre-roll so speech doesn't start abruptly
@@ -82,6 +125,7 @@ public sealed class VadGateNode(
             DateTime.UtcNow - _lastSpeakingFrame > TimeSpan.FromMilliseconds(cfg.SilenceDurationMs))
         {
             _isSpeaking = false;
+            speakingStateChanged?.Invoke(_isSpeaking);
         }
 
         if (_isSpeaking)
