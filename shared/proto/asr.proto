@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option csharp_namespace = "BrainService.Asr.Proto";
+
+package asr;
+
+service Asr {
+  rpc Transcribe (UtteranceRequest) returns (TranscriptResponse);
+}
+
+// 16 kHz float32 mono - PCM LE
+message UtteranceRequest {
+  string session_id = 1;
+  uint64 user_id = 2;
+  bytes pcm_f32_mono_16k = 3;
+  int64 started_at_ms = 4;
+  int64 ended_at_ms = 5;
+}
+
+message TranscriptResponse {
+  string session_id = 1;
+  int64 user_id = 2;
+  string text = 3;
+  float confidence = 4;
+  string language = 5;
+  int64 started_at_ms = 6;
+  int64 ended_at_ms = 7;
+}

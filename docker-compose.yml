@@ -24,6 +24,21 @@ services:
     networks:
       - internal
 
+  asr:
+    build:
+      context: .
+      dockerfile: services/asr/Dockerfile
+    restart: unless-stopped
+    networks:
+      - internal
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
   valkey:
     image: valkey/valkey:9-alpine
     restart: unless-stopped
