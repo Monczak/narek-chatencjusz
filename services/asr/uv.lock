@@ -40,6 +40,7 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
+    { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
 ]
@@ -55,6 +56,7 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.2.1" },
     { name = "grpcio", specifier = ">=1.78.0" },
     { name = "grpcio-tools", specifier = ">=1.78.0" },
+    { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
 ]

@@ -28,6 +28,14 @@ services:
     build:
       context: .
       dockerfile: services/asr/Dockerfile
+    environment:
+      - ASR_MODEL=large-v3-turbo
+      - ASR_DEVICE=cuda
+      - ASR_COMPUTE_TYPE=float16
+      - ASR_FLASH_ATTENTION=true
+      - ASR_NUM_WORKERS=1
+      - ASR_BEAM_SIZE=5
+      - ASR_GRPC_PORT=6060
     restart: unless-stopped
     networks:
       - internal
@@ -38,6 +46,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    volumes:
+      - asr_model_cache:/root/.cache/huggingface
 
   valkey:
     image: valkey/valkey:9-alpine
@@ -49,3 +59,6 @@ services:
 
 networks:
   internal:
+
+volumes:
+  asr_model_cache:
