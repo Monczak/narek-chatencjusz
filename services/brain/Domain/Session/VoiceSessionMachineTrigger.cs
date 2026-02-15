@@ -9,4 +9,13 @@ public enum VoiceSessionMachineTrigger
     SessionUnstable,
     NodeDisconnected,
     NodeReconnected,
+    
+    UserSpeechStarted,
+    SilenceThresholdReached,
+    RambleThresholdReached,
+    UserJoinedGraceExpired,
+    LlmResponseStarted,
+    LlmResponseCompleted,
+    LlmCanceled,
+    UserInterrupted,
 }

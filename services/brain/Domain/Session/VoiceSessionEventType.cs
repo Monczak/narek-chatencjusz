@@ -7,4 +7,6 @@ public enum VoiceSessionEventType
     UserJoined,
     UserLeft,
     Transcript,
+    BotResponse,
+    SystemNote,
 }

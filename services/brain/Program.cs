@@ -1,4 +1,5 @@
 using BrainService;
+using BrainService.Domain.Llm;
 using BrainService.Hubs;
 using BrainService.Services;
 using BrainService.Services.Asr;
@@ -6,6 +7,7 @@ using BrainService.Services.Audio.Graph;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
+using BrainService.Services.Llm;
 using BrainService.Services.Session;
 using Microsoft.Extensions.Logging.Console;
 using MongoDB.Driver;
@@ -60,6 +62,15 @@ builder.Services.AddSingleton<VoiceSessionHistoryService>();
 builder.Services.AddSingleton<VoiceSessionService>();
 builder.Services.AddHostedService<StaleConnectionClearer>();
 
+// LLM
+builder.Services.AddSingleton<GuildSettingsService>();
+builder.Services.AddSingleton<LlmProviderFactory>();
+
+builder.Services.AddSingleton<ITokenCounter, FallbackTokenCounter>();
+
+builder.Services.AddSingleton<LlmContextBuilder>();
+builder.Services.AddSingleton<LlmOrchestrator>();
+
 // Dashboard
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddMudServices();
@@ -74,6 +85,13 @@ var app = builder.Build();
 
 var vadModelService = app.Services.GetRequiredService<SileroVadModelService>();
 await vadModelService.EnsureModelAsync();
+
+{
+    var orchestrator = app.Services.GetRequiredService<LlmOrchestrator>();
+    var sessionSvc = app.Services.GetRequiredService<VoiceSessionService>();
+    orchestrator.SetSessionService(sessionSvc);
+    sessionSvc.SetOrchestrator(orchestrator);
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

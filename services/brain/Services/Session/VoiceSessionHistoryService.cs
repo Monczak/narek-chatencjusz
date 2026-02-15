@@ -14,6 +14,15 @@ public class VoiceSessionHistoryService
     private readonly ILogger<VoiceSessionHistoryService> _logger;
     private readonly IHubContext<DashboardHub> _hubContext;
     
+    public static readonly HashSet<VoiceSessionEventType> LlmContextTypes =
+    [
+        VoiceSessionEventType.Transcript,
+        VoiceSessionEventType.BotResponse,
+        VoiceSessionEventType.UserJoined,
+        VoiceSessionEventType.UserLeft,
+        VoiceSessionEventType.SystemNote,
+    ];
+    
     public VoiceSessionHistoryService(IMongoDatabase db, IHubContext<DashboardHub> hubContext, ILogger<VoiceSessionHistoryService> logger)
     {
         _sessionCollection = db.GetCollection<VoiceSessionDocument>("voice_sessions");
@@ -66,6 +75,17 @@ public class VoiceSessionHistoryService
             .Limit(limit)
             .ToListAsync();
 
+    public async Task<List<VoiceSessionEventDocument>> GetLlmContextEventsAsync(
+        string sessionId, int limit = 500, CancellationToken ct = default) =>
+        await _eventCollection
+            .Find(Builders<VoiceSessionEventDocument>.Filter.And(
+                Builders<VoiceSessionEventDocument>.Filter.Eq(e => e.SessionId, sessionId),
+                Builders<VoiceSessionEventDocument>.Filter.In(e => e.Type, LlmContextTypes)
+            ))
+            .Sort(Builders<VoiceSessionEventDocument>.Sort.Ascending(e => e.Timestamp))
+            .Limit(limit)
+            .ToListAsync(ct);
+    
     public async Task<List<VoiceSessionDocument>> GetRecentSessionsAsync(ulong? guildId = null, int limit = 50)
     {
         var filter = guildId.HasValue
@@ -103,6 +123,67 @@ public class VoiceSessionHistoryService
         
         await _hubContext.Clients.All.SendAsync("TranscriptReceived", transcript.SessionId);
     }
+    
+    public async Task<string> AppendBotResponseAsync(
+        string sessionId,
+        string content,
+        bool isPartial,
+        string? finishReason = null,
+        int generationMs = 0,
+        IReadOnlyList<object>? toolCalls = null,
+        string? existingEventId = null)
+    {
+        var data = new BsonDocument
+        {
+            { "content", content },
+            { "is_partial", isPartial },
+            { "finish_reason", finishReason ?? null },
+            { "generation_ms", generationMs },
+        };
+        if (toolCalls is { Count: > 0 })
+            data["tool_calls"] = new BsonArray(toolCalls.Select(t => BsonValue.Create(t)));
+
+        if (existingEventId != null)
+        {
+            await _eventCollection.UpdateOneAsync(
+                Builders<VoiceSessionEventDocument>.Filter.Eq(e => e.Id, existingEventId),
+                Builders<VoiceSessionEventDocument>.Update
+                    .Set(e => e.Data, data)
+                    .Set(e => e.Timestamp, DateTime.UtcNow)
+            );
+            await _hubContext.Clients.All.SendAsync(
+                isPartial ? "LlmResponseChunk" : "LlmResponseCompleted", sessionId);
+            return existingEventId;
+        }
+
+        var evt = new VoiceSessionEventDocument
+        {
+            SessionId = sessionId,
+            Type = VoiceSessionEventType.BotResponse,
+            Data = data,
+        };
+        await _eventCollection.InsertOneAsync(evt);
+        await _hubContext.Clients.All.SendAsync("LlmResponseChunk", sessionId);
+        return evt.Id;
+    }
+    
+    public async Task MarkBotResponseCanceledAsync(string sessionId, string eventId, string partialContent)
+    {
+        await _eventCollection.UpdateOneAsync(
+            Builders<VoiceSessionEventDocument>.Filter.Eq(e => e.Id, eventId),
+            Builders<VoiceSessionEventDocument>.Update
+                .Set("Data.content", partialContent)
+                .Set("Data.is_partial", true)
+                .Set("Data.finish_reason", "cancelled")
+        );
+        await _hubContext.Clients.All.SendAsync("LlmResponseCanceled", sessionId);
+    }
+    
+    public async Task AppendSystemNoteAsync(string sessionId, string note) =>
+        await AppendEventAsync(sessionId, VoiceSessionEventType.SystemNote, null, new BsonDocument
+        {
+            { "note", note },
+        });
     
     public async Task MarkSessionEndedAsync(string sessionId)
     {

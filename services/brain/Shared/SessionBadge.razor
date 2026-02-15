@@ -3,9 +3,20 @@
     case VoiceSessionMachineState.Unstarted:
         <MudChip T="string" Color="Color.Dark" Icon="@Icons.Material.Filled.DoDisturb">Unstarted</MudChip>
         break;
+        
     case VoiceSessionMachineState.Idle:
         <MudChip T="string" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">Idle</MudChip>
         break;
+    case VoiceSessionMachineState.Listening:
+        <MudChip T="string" Color="Color.Info" Icon="@Icons.Material.Filled.Hearing">Listening</MudChip>
+        break;
+    case VoiceSessionMachineState.Thinking:
+        <MudChip T="string" Color="Color.Warning" Icon="@Icons.Material.Filled.Psychology">Thinking</MudChip>
+        break;
+    case VoiceSessionMachineState.Speaking:
+        <MudChip T="string" Color="Color.Primary" Icon="@Icons.Material.Filled.RecordVoiceOver">Speaking</MudChip>
+        break;
+
     case VoiceSessionMachineState.Ended:
         <MudChip T="string" Color="Color.Dark" Icon="@Icons.Material.Filled.Stop">Ended</MudChip>
         break;
@@ -18,5 +29,5 @@
 }
 
 @code {
-    [Parameter] public VoiceSessionMachineState State { get; set; }    
+    [Parameter] public VoiceSessionMachineState State { get; set; }
 }

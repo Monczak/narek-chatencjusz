@@ -61,6 +61,30 @@ services:
     volumes:
       - asr_model_cache:/root/.cache/huggingface
 
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    command: >
+      -m /models/model.gguf
+      --port 7070
+      --host 0.0.0.0
+      -ngl 99
+      --ctx-size 8192
+      --parallel 1
+    ports:
+      - "7070:7070"
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - llm_models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
   mongo:
     image: mongo:8
     restart: unless-stopped
@@ -86,3 +110,4 @@ volumes:
   asr_model_cache:
   mongo_data:
   brain_models:
+  llm_models:

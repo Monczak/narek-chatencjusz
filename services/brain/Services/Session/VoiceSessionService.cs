@@ -1,8 +1,11 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using BrainService.Domain.Discord;
+using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
 using BrainService.Proto.Brain;
+using BrainService.Services.Llm;
 using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
 using StackExchange.Redis;
@@ -16,10 +19,25 @@ public class VoiceSessionService(
     ILoggerFactory loggerFactory,
     NodeRegistryService nodeRegistry,
     VoiceSessionHistoryService historyService,
+    GuildSettingsService settingsService,
     IHubContext<DashboardHub> hubContext
 ) 
 {
     private readonly IDatabase _db = redis.GetDatabase();
+    
+    private sealed class SessionRuntimeState
+    {
+        public CancellationTokenSource? SilenceTimerCts  { get; set; }
+        public CancellationTokenSource? GraceTimerCts    { get; set; }
+        public Queue<VoiceSessionEventDocument> PendingEvents { get; } = new();
+        public DateTime LastLlmContextEventAt { get; set; } = DateTime.UtcNow;
+    }
+
+    private readonly ConcurrentDictionary<string, SessionRuntimeState> _runtimeStates = new();
+    
+    private ILlmOrchestrationTrigger? _orchestrator;
+    
+    public void SetOrchestrator(ILlmOrchestrationTrigger trigger) => _orchestrator = trigger;
     
     private async Task<string?> ResolveSessionIdAsync(ulong guildId, string? providedSessionId)
     {
@@ -56,6 +74,18 @@ public class VoiceSessionService(
         var results = await Task.WhenAll(tasks);
         return results.OfType<VoiceSessionState>().OrderByDescending(x => x.LastUpdated).ToList();
     }
+    
+    public IReadOnlyList<VoiceSessionEventDocument> DrainPendingEvents(string sessionId)
+    {
+        if (!_runtimeStates.TryGetValue(sessionId, out var runtime))
+            return [];
+
+        var result = new List<VoiceSessionEventDocument>();
+        while (runtime.PendingEvents.TryDequeue(out var evt))
+            result.Add(evt);
+
+        return result;
+    }
 
     public async Task HandleEventAsync(VoiceSessionEvent evt)
     {
@@ -67,6 +97,8 @@ public class VoiceSessionService(
                 evt.Guild.Id, evt.EventDataCase);
             return;
         }
+        
+        var resultingState = VoiceSessionMachineState.Unstarted;
 
         await ExecuteSessionTransactionAsync(sessionId,
             async loadedState =>
@@ -124,10 +156,37 @@ public class VoiceSessionService(
                     machine.Recover();
                 }
                 machine.ProcessEvent(evt);
+                resultingState = machine.State.MachineState;
             },
             TimeSpan.FromSeconds(5),
             evt
         );
+        
+        if (evt.UserState != null && sessionId != null)
+        {
+            var runtime = _runtimeStates.GetOrAdd(sessionId, _ => new SessionRuntimeState());
+            if (resultingState is VoiceSessionMachineState.Thinking or VoiceSessionMachineState.Speaking)
+            {
+                // Can't inject into context right now — queue it
+                var pendingDoc = new VoiceSessionEventDocument
+                {
+                    SessionId = sessionId,
+                    Type = evt.UserState.ChangeType == UserVoiceStateUpdate.Types.ChangeType.Joined
+                        ? VoiceSessionEventType.UserJoined
+                        : VoiceSessionEventType.UserLeft,
+                    UserId = (long)evt.UserState.User.Id,
+                    Data = new MongoDB.Bson.BsonDocument { { "display_name", evt.UserState.User.DisplayName } },
+                };
+                runtime.PendingEvents.Enqueue(pendingDoc);
+            }
+            else if (resultingState == VoiceSessionMachineState.Idle
+                     && evt.UserState.ChangeType == UserVoiceStateUpdate.Types.ChangeType.Joined)
+            {
+                // User joined while idle — start grace timer
+                var settings = await settingsService.GetSettingsAsync(evt.Guild.Id);
+                StartGraceTimer(sessionId, evt.Guild.Id, settings.UserJoinGraceMs, runtime);
+            }
+        }
     }
 
     public async Task HandleNodeDisconnectAsync(GuildContext guild)
@@ -138,6 +197,9 @@ public class VoiceSessionService(
             logger.LogWarning("No session found for guild {GuildId} during node disconnect", guild.Id);
             return;
         }
+        
+        CancelSessionTimers(sessionId);
+        _orchestrator?.Cancel(sessionId);
 
         await ExecuteSessionTransactionAsync(sessionId,
             loadedState =>
@@ -180,12 +242,49 @@ public class VoiceSessionService(
         sessionId = await ResolveSessionIdAsync(guildId, sessionId);
         if (sessionId == null) return;
 
+        VoiceSessionMachineState resultingState = VoiceSessionMachineState.Unstarted;
+        bool speakingNowEmpty = false;
+
         await ExecuteSessionTransactionAsync(sessionId,
             Task.FromResult,
-            machine => machine.UpdateUserSpeaking(userId, isSpeaking),
+            machine =>
+            {
+                speakingNowEmpty = machine.UpdateUserSpeaking(userId, isSpeaking);
+                resultingState   = machine.State.MachineState;
+            },
             TimeSpan.FromSeconds(1),
             null
         );
+
+        var runtime = _runtimeStates.GetOrAdd(sessionId, _ => new SessionRuntimeState());
+
+        if (isSpeaking)
+        {
+            // Cancel silence timer if running
+            CancelTimer(ref runtime.SilenceTimerCts);
+
+            // Speaking during Thinking → cancel LLM immediately
+            if (resultingState == VoiceSessionMachineState.Listening
+                && _orchestrator != null)
+            {
+                // State machine already transitioned Thinking → Listening via UserSpeechStarted
+                _orchestrator.Cancel(sessionId);
+            }
+
+            // Speaking during Speaking → check interruption threshold
+            // For now: always cancel and transition
+            if (resultingState == VoiceSessionMachineState.Speaking)
+            {
+                _orchestrator?.Cancel(sessionId);
+                await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.UserInterrupted);
+            }
+        }
+        else if (speakingNowEmpty && resultingState == VoiceSessionMachineState.Listening)
+        {
+            // Last speaker stopped → start silence timer
+            var settings = await settingsService.GetSettingsAsync(guildId);
+            StartSilenceTimer(sessionId, guildId, settings.SilenceThresholdMs, runtime);
+        }
     }
     
     private async Task ExecuteSessionTransactionAsync(
@@ -281,5 +380,86 @@ public class VoiceSessionService(
         {
             logger.LogError(ex, "Failed to write history for session {SessionId}", state.SessionId);
         }
+    }
+    
+    public async Task FireConversationTriggerAsync(string sessionId, VoiceSessionMachineTrigger trigger)
+    {
+        await ExecuteSessionTransactionAsync(sessionId,
+            Task.FromResult,
+            machine =>
+            {
+                switch (trigger)
+                {
+                    case VoiceSessionMachineTrigger.SilenceThresholdReached: machine.Fire(VoiceSessionMachineTrigger.SilenceThresholdReached); break;
+                    case VoiceSessionMachineTrigger.RambleThresholdReached:  machine.Fire(VoiceSessionMachineTrigger.RambleThresholdReached);  break;
+                    case VoiceSessionMachineTrigger.UserJoinedGraceExpired:  machine.Fire(VoiceSessionMachineTrigger.UserJoinedGraceExpired);  break;
+                    case VoiceSessionMachineTrigger.LlmResponseStarted:      machine.Fire(VoiceSessionMachineTrigger.LlmResponseStarted);      break;
+                    case VoiceSessionMachineTrigger.LlmResponseCompleted:    machine.Fire(VoiceSessionMachineTrigger.LlmResponseCompleted);    break;
+                    case VoiceSessionMachineTrigger.LlmCanceled:             machine.Fire(VoiceSessionMachineTrigger.LlmCanceled);             break;
+                    case VoiceSessionMachineTrigger.UserInterrupted:         machine.Fire(VoiceSessionMachineTrigger.UserInterrupted);         break;
+                }
+            },
+            TimeSpan.FromSeconds(2),
+            null
+        );
+    }
+    
+    private void StartSilenceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime)
+    {
+        CancelTimer(ref runtime.SilenceTimerCts);
+        var cts = new CancellationTokenSource();
+        runtime.SilenceTimerCts = cts;
+
+        _ = Task.Delay(delayMs, cts.Token).ContinueWith(async t =>
+        {
+            if (t.IsCanceled) return;
+            try
+            {
+                await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.SilenceThresholdReached);
+                if (_orchestrator != null)
+                    await _orchestrator.TriggerAsync(sessionId, guildId, LlmContextReason.UserSilence);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error in silence timer callback for session {SessionId}", sessionId);
+            }
+        }, TaskScheduler.Default);
+    }
+
+    private void StartGraceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime)
+    {
+        CancelTimer(ref runtime.GraceTimerCts);
+        var cts = new CancellationTokenSource();
+        runtime.GraceTimerCts = cts;
+
+        _ = Task.Delay(delayMs, cts.Token).ContinueWith(async t =>
+        {
+            if (t.IsCanceled) return;
+            try
+            {
+                await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.UserJoinedGraceExpired);
+                if (_orchestrator != null)
+                    await _orchestrator.TriggerAsync(sessionId, guildId, LlmContextReason.UserJoined);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error in grace timer callback for session {SessionId}", sessionId);
+            }
+        }, TaskScheduler.Default);
+    }
+
+    private static void CancelTimer(ref CancellationTokenSource? cts)
+    {
+        var existing = Interlocked.Exchange(ref cts, null);
+        if (existing == null) return;
+        existing.Cancel();
+        existing.Dispose();
+    }
+
+    private void CancelSessionTimers(string sessionId)
+    {
+        if (!_runtimeStates.TryGetValue(sessionId, out var runtime)) return;
+        CancelTimer(ref runtime.SilenceTimerCts);
+        CancelTimer(ref runtime.GraceTimerCts);
     }
 }

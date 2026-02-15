@@ -115,6 +115,11 @@ else
                                     @_events.Count event(s)
                                 </MudText>
                             }
+                            @if (_llmStreaming)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary"
+                                         Icon="@Icons.Material.Filled.FiberManualRecord">Generating…</MudChip>
+                            }
                         </MudStack>
                     </CardHeaderContent>
                     <CardHeaderActions>
@@ -154,6 +159,7 @@ else
                                                         </MudText>
                                                     }
                                                 </MudStack>
+                                                
                                                 @if (evt.Type == VoiceSessionEventType.Transcript && evt.Data.Contains("text"))
                                                 {
                                                     <MudText Typo="Typo.body2" Class="mt-1">
@@ -166,6 +172,30 @@ else
                                                             · @(((float)evt.Data["confidence"].AsDouble).ToString("P0"))]
                                                         </MudText>
                                                     }
+                                                }
+                                                
+                                                @if (evt.Type == VoiceSessionEventType.BotResponse && evt.Data.Contains("content"))
+                                                {
+                                                    var isPartial = evt.Data.Contains("is_partial") && evt.Data["is_partial"].AsBoolean;
+                                                    <MudText Typo="Typo.body2" Class="mt-1"
+                                                             Style="@(isPartial ? "opacity:0.7;font-style:italic" : "")">
+                                                        @evt.Data["content"].AsString
+                                                        @if (isPartial) { <text> [interrupted]</text> }
+                                                    </MudText>
+                                                    @if (evt.Data.Contains("generation_ms") && evt.Data["generation_ms"].AsInt32 > 0)
+                                                    {
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            [@evt.Data["generation_ms"].AsInt32 ms]
+                                                        </MudText>
+                                                    }
+                                                }
+                                                
+                                                @if (evt.Type == VoiceSessionEventType.SystemNote && evt.Data.Contains("note"))
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1"
+                                                             Style="font-style:italic">
+                                                        @evt.Data["note"].AsString
+                                                    </MudText>
                                                 }
                                             </MudStack>
                                         </ItemContent>
@@ -284,7 +314,8 @@ else
     private bool _eventsLoading;
     private bool _isBusy;
     private bool _timelineExpanded;
-    
+    private bool _llmStreaming;
+
     private IEnumerable<VoiceSessionEventDocument> VisibleEvents =>
         (_timelineExpanded
             ? _events
@@ -303,6 +334,9 @@ else
         _hubConnection.On<VoiceSessionState>("SessionUpdated", OnSessionUpdated);
         _hubConnection.On<DspSessionMetrics>("DspMetricsUpdated", OnDspMetricsUpdated);
         _hubConnection.On<string>("TranscriptReceived", OnTranscriptReceived);
+        _hubConnection.On<string>("LlmResponseChunk", OnLlmResponseChunk);
+        _hubConnection.On<string>("LlmResponseCompleted", OnLlmResponseCompleted);
+        _hubConnection.On<string>("LlmResponseCanceled", OnLlmResponseCancelled);
 
         await _hubConnection.StartAsync();
     }
@@ -339,19 +373,36 @@ else
         if (sessionId != SessionIdParam) return;
         InvokeAsync(LoadEventsAsync);
     }
-
-    private void ExpandTimeline()
-    {
-        _timelineExpanded = true;
-        StateHasChanged();
-    }
-
-    private void CollapseTimeline()
-    {
-        _timelineExpanded = false;
-        StateHasChanged();
-    }
     
+    private void OnLlmResponseChunk(string sessionId)
+    {
+        if (sessionId != SessionIdParam) return;
+        InvokeAsync(() => { _llmStreaming = true; StateHasChanged(); });
+    }
+
+    private void OnLlmResponseCompleted(string sessionId)
+    {
+        if (sessionId != SessionIdParam) return;
+        InvokeAsync(async () =>
+        {
+            _llmStreaming = false;
+            await LoadEventsAsync();
+        });
+    }
+
+    private void OnLlmResponseCancelled(string sessionId)
+    {
+        if (sessionId != SessionIdParam) return;
+        InvokeAsync(async () =>
+        {
+            _llmStreaming = false;
+            await LoadEventsAsync();
+        });
+    }
+
+    private void ExpandTimeline()  { _timelineExpanded = true;  StateHasChanged(); }
+    private void CollapseTimeline() { _timelineExpanded = false; StateHasChanged(); }
+
     private string GetDisplayName(VoiceSessionEventDocument evt)
     {
         if (evt.UserId is null) return string.Empty;
@@ -396,22 +447,26 @@ else
 
     private static Color GetEventColor(VoiceSessionEventType type) => type switch
     {
-        VoiceSessionEventType.Transcript => Color.Primary,
-        VoiceSessionEventType.UserJoined => Color.Success,
-        VoiceSessionEventType.UserLeft   => Color.Warning,
-        VoiceSessionEventType.Started    => Color.Info,
-        VoiceSessionEventType.Ended      => Color.Dark,
-        _                                => Color.Default,
+        VoiceSessionEventType.Transcript  => Color.Primary,
+        VoiceSessionEventType.BotResponse => Color.Secondary,
+        VoiceSessionEventType.SystemNote  => Color.Default,
+        VoiceSessionEventType.UserJoined  => Color.Success,
+        VoiceSessionEventType.UserLeft    => Color.Warning,
+        VoiceSessionEventType.Started     => Color.Info,
+        VoiceSessionEventType.Ended       => Color.Dark,
+        _ => Color.Default,
     };
 
     private static string GetEventIcon(VoiceSessionEventType type) => type switch
     {
-        VoiceSessionEventType.Transcript => Icons.Material.Filled.RecordVoiceOver,
-        VoiceSessionEventType.UserJoined => Icons.Material.Filled.PersonAdd,
-        VoiceSessionEventType.UserLeft   => Icons.Material.Filled.PersonRemove,
-        VoiceSessionEventType.Started    => Icons.Material.Filled.PlayCircle,
-        VoiceSessionEventType.Ended      => Icons.Material.Filled.StopCircle,
-        _                                => Icons.Material.Filled.Info,
+        VoiceSessionEventType.Transcript  => Icons.Material.Filled.RecordVoiceOver,
+        VoiceSessionEventType.BotResponse => Icons.Material.Filled.SmartToy,
+        VoiceSessionEventType.SystemNote  => Icons.Material.Filled.Info,
+        VoiceSessionEventType.UserJoined  => Icons.Material.Filled.PersonAdd,
+        VoiceSessionEventType.UserLeft    => Icons.Material.Filled.PersonRemove,
+        VoiceSessionEventType.Started     => Icons.Material.Filled.PlayCircle,
+        VoiceSessionEventType.Ended       => Icons.Material.Filled.StopCircle,
+        _ => Icons.Material.Filled.Info,
     };
 
     private static string GetTimeAgo(DateTime lastUpdated)
