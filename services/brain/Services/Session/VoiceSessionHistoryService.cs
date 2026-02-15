@@ -1,4 +1,5 @@
 using BrainService.Domain.Asr;
+using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
 using Microsoft.AspNetCore.SignalR;
@@ -99,17 +100,25 @@ public class VoiceSessionHistoryService
             .ToListAsync();
     }
 
-    public async Task AppendUserJoinedAsync(string sessionId, ulong userId, string displayName) =>
+    public async Task AppendUserJoinedAsync(string sessionId, ulong userId, string displayName)
+    {
         await AppendEventAsync(sessionId, VoiceSessionEventType.UserJoined, userId, new BsonDocument
         {
             { "display_name", displayName },
-        });
+        });   
+        
+        await _hubContext.Clients.All.SendAsync("UserJoined", sessionId);
+    }
 
-    public async Task AppendUserLeftAsync(string sessionId, ulong userId, string displayName) =>
+    public async Task AppendUserLeftAsync(string sessionId, ulong userId, string displayName)
+    {
         await AppendEventAsync(sessionId, VoiceSessionEventType.UserLeft, userId, new BsonDocument
         {
             { "display_name", displayName },
         });
+        
+        await _hubContext.Clients.All.SendAsync("UserLeft", sessionId);
+    }
 
     public async Task AppendTranscriptAsync(TranscriptResult transcript)
     {
@@ -128,20 +137,23 @@ public class VoiceSessionHistoryService
         string sessionId,
         string content,
         bool isPartial,
-        string? finishReason = null,
+        LlmFinishReason? finishReason = null,
         int generationMs = 0,
         IReadOnlyList<object>? toolCalls = null,
         string? existingEventId = null)
     {
         var data = new BsonDocument
         {
-            { "content", content },
+            { "content", content ?? string.Empty },
             { "is_partial", isPartial },
-            { "finish_reason", finishReason ?? null },
+            { "finish_reason", finishReason.HasValue 
+                ? BsonValue.Create(finishReason.Value.ToString().ToLowerInvariant()) 
+                : BsonNull.Value },
             { "generation_ms", generationMs },
         };
+        
         if (toolCalls is { Count: > 0 })
-            data["tool_calls"] = new BsonArray(toolCalls.Select(t => BsonValue.Create(t)));
+            data["tool_calls"] = new BsonArray(toolCalls.Select(BsonValue.Create));
 
         if (existingEventId != null)
         {
@@ -174,7 +186,7 @@ public class VoiceSessionHistoryService
             Builders<VoiceSessionEventDocument>.Update
                 .Set("Data.content", partialContent)
                 .Set("Data.is_partial", true)
-                .Set("Data.finish_reason", "cancelled")
+                .Set("Data.finish_reason", nameof(LlmFinishReason.Cancelled).ToLowerInvariant()) 
         );
         await _hubContext.Clients.All.SendAsync("LlmResponseCanceled", sessionId);
     }

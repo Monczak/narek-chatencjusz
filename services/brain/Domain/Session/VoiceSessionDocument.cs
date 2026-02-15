@@ -4,9 +4,9 @@ namespace BrainService.Domain.Session;
 
 public class VoiceSessionDocument
 {
-    [BsonId] public string SessionId { get; set; } = null!;
-    [BsonElement("guild_id")] public long GuildId { get; set; }
-    [BsonElement("guild_name")] public string GuildName { get; set; }
+    [BsonId] public required string SessionId { get; init; } = null!;
+    [BsonElement("guild_id")] public required long GuildId { get; init; }
+    [BsonElement("guild_name")] public required string GuildName { get; set; }
     [BsonElement("channel_id")] public long? ChannelId { get; set; }
     [BsonElement("channel_name")] public string? ChannelName { get; set; }
     [BsonElement("node_id")] public string? NodeId { get; set; }

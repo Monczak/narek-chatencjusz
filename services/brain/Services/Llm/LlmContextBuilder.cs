@@ -1,11 +1,11 @@
 using System.Text.RegularExpressions;
+using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
-using BrainService.Services.Llm;
 using BrainService.Services.Session;
 
-namespace BrainService.Domain.Llm;
+namespace BrainService.Services.Llm;
 
-public partial class LlmContextBuilder(
+public class LlmContextBuilder(
     GuildSettingsService settingsService,
     VoiceSessionHistoryService historyService,
     ITokenCounter tokenCounter,
@@ -75,7 +75,7 @@ public partial class LlmContextBuilder(
     private static string ApplyTemplates(string prompt, string botName, VoiceSessionState sessionState)
     {
         var now = DateTime.UtcNow;
-        return SystemPromptTemplateRegex().Replace(prompt, m => m.Groups[1].Value switch
+        return Regex.Replace(prompt, @"\{\{(\w+)\}\}",m => m.Groups[1].Value switch
         {
             "bot_name"   => botName,
             "guild_name" => sessionState.GuildName,
@@ -179,7 +179,4 @@ public partial class LlmContextBuilder(
     
     private const int ContextWindowSafetyMargin = 64;
     private const int LlmContextEventLimit = 500;
-
-    [GeneratedRegex(@"\{\{(\w+)\}\}")]
-    private static partial Regex SystemPromptTemplateRegex();
 }

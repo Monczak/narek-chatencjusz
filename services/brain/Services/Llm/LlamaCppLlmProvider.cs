@@ -52,7 +52,7 @@ public class LlamaCppLlmProvider : ILlmProvider
         if (requestException != null)
         {
             _logger.LogError(requestException, "LLM request failed");
-            yield return new LlmStreamChunk(null, null, true, "stop");
+            yield return new LlmStreamChunk(null, null, true, LlmFinishReason.Cancelled);
             yield break;
         }
         
@@ -77,7 +77,7 @@ public class LlamaCppLlmProvider : ILlmProvider
             var data = line["data: ".Length..].Trim();
             if (data == "[DONE]")
             {
-                yield return new LlmStreamChunk(null, null, true, "stop");
+                yield return new LlmStreamChunk(null, null, true, LlmFinishReason.Cancelled);
                 yield break;
             }
             
@@ -97,10 +97,10 @@ public class LlamaCppLlmProvider : ILlmProvider
             }
         }
         
-        yield return new LlmStreamChunk(null, null, true, "cancelled");
+        yield return new LlmStreamChunk(null, null, true, LlmFinishReason.Cancelled);
     }
 
-    private LlmStreamChunk? ParseSseDelta(string json)
+    private static LlmStreamChunk? ParseSseDelta(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -112,9 +112,19 @@ public class LlamaCppLlmProvider : ILlmProvider
         }
 
         var choice = choices[0];
-        var finishReason = choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind != JsonValueKind.Null
-            ? reason.GetString()
+        
+        var rawFinishReason = choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind != JsonValueKind.Null
+            ? reason.GetString()?.ToLowerInvariant()
             : null;
+
+        LlmFinishReason? finishReason = rawFinishReason switch
+        {
+            "stop" => LlmFinishReason.Stop,
+            "length" => LlmFinishReason.Length,
+            "tool_calls" => LlmFinishReason.ToolCalls,
+            "cancelled" => LlmFinishReason.Cancelled,
+            _ => rawFinishReason != null ? LlmFinishReason.Error : null
+        };
 
         var delta = choice.GetProperty("delta");
 
@@ -122,7 +132,7 @@ public class LlamaCppLlmProvider : ILlmProvider
         {
             var first = calls[0];
             var name = first.TryGetProperty("function", out var fn) ? fn.GetProperty("name").GetString() ?? "" : "";
-            var argsRaw = first.TryGetProperty("function", out var fn2) ? fn2.GetProperty("name").GetString() ?? "" : "";
+            var argsRaw = first.TryGetProperty("function", out var fn2) ? fn2.GetProperty("arguments").GetString() ?? "" : "";
             var id = first.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
             
             return new LlmStreamChunk(null, new LlmToolCall(id, name, argsRaw), finishReason != null, finishReason);

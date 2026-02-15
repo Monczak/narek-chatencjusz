@@ -19,11 +19,20 @@ public record LlmRequest(
 
 public record LlmToolCall(string Id, string Name, string ArgumentsJson);
 
+public enum LlmFinishReason
+{
+    Stop,
+    Cancelled,
+    Length,
+    ToolCalls,
+    Error
+}
+
 public record LlmStreamChunk(
     string? TextDelta,
     LlmToolCall? ToolCall,
     bool IsComplete,
-    string? FinishReason
+    LlmFinishReason? FinishReason
 );
 
 public enum LlmContextReason

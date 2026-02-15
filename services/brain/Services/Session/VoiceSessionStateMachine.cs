@@ -1,8 +1,9 @@
 using BrainService.Domain.Discord;
+using BrainService.Domain.Session;
 using BrainService.Proto.Brain;
 using Stateless;
 
-namespace BrainService.Domain.Session;
+namespace BrainService.Services.Session;
 
 public class VoiceSessionStateMachine
 {

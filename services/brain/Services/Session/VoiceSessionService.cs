@@ -27,8 +27,9 @@ public class VoiceSessionService(
     
     private sealed class SessionRuntimeState
     {
-        public CancellationTokenSource? SilenceTimerCts  { get; set; }
-        public CancellationTokenSource? GraceTimerCts    { get; set; }
+        public CancellationTokenSource? SilenceTimerCts;
+        public CancellationTokenSource? GraceTimerCts;
+    
         public Queue<VoiceSessionEventDocument> PendingEvents { get; } = new();
         public DateTime LastLlmContextEventAt { get; set; } = DateTime.UtcNow;
     }

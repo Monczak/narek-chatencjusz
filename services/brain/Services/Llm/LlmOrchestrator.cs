@@ -1,10 +1,11 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Services.Llm;
 using BrainService.Services.Session;
 
-namespace BrainService.Domain.Llm;
+namespace BrainService.Services.Llm;
 
 public class LlmOrchestrator(
     LlmContextBuilder contextBuilder,
@@ -123,13 +124,13 @@ public class LlmOrchestrator(
                     // LLM returned synchronously without streaming (rare)
                     eventId = await historyService.AppendBotResponseAsync(
                         sessionId, accumulated, isPartial: false,
-                        finishReason: "stop", generationMs: (int)sw.ElapsedMilliseconds);
+                        finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds);
                 }
                 else
                 {
                     await historyService.AppendBotResponseAsync(
                         sessionId, accumulated, isPartial: false,
-                        finishReason: "stop", generationMs: (int)sw.ElapsedMilliseconds,
+                        finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds,
                         existingEventId: eventId);
                 }
 

@@ -337,6 +337,8 @@ else
         _hubConnection.On<string>("LlmResponseChunk", OnLlmResponseChunk);
         _hubConnection.On<string>("LlmResponseCompleted", OnLlmResponseCompleted);
         _hubConnection.On<string>("LlmResponseCanceled", OnLlmResponseCancelled);
+        _hubConnection.On<string>("UserJoined", OnUserJoined);
+        _hubConnection.On<string>("UserLeft", OnUserLeft);
 
         await _hubConnection.StartAsync();
     }
@@ -398,6 +400,18 @@ else
             _llmStreaming = false;
             await LoadEventsAsync();
         });
+    }
+
+    private void OnUserJoined(string sessionId)
+    {
+        if (sessionId != SessionIdParam) return;
+        InvokeAsync(LoadEventsAsync);
+    }
+    
+    private void OnUserLeft(string sessionId)
+    {
+        if (sessionId != SessionIdParam) return;
+        InvokeAsync(LoadEventsAsync);
     }
 
     private void ExpandTimeline()  { _timelineExpanded = true;  StateHasChanged(); }
