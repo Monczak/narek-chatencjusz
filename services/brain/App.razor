@@ -19,6 +19,119 @@
     <Routes @rendermode="InteractiveServer" />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+
+    <div id="components-reconnect-modal">
+        <div class="custom-reconnect-dialog">
+            
+            <div class="reconnect-state show-reconnecting">
+                <div class="components-rejoining-animation">
+                    <div></div>
+                    <div></div>
+                </div>
+                <p>Connection lost. Attempting to reconnect...</p>
+            </div>
+
+            <div class="reconnect-state show-failed show-rejected">
+                <p>Cannot resume the session.</p>
+                <button class="mud-button-root mud-button mud-button-filled mud-button-filled-primary mud-button-filled-size-medium mud-ripple" onclick="location.reload()">
+                    <span class="mud-button-label">Reload Page</span>
+                </button>
+            </div>
+            
+        </div>
+    </div>
+
+    <style>
+        @@keyframes components-reconnect-fadeInOpacity {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        @@keyframes components-reconnect-slideUp {
+            0% { transform: translateY(30px) scale(0.95); }
+            100% { transform: translateY(0); }
+        }
+
+        @@keyframes components-rejoining-animation {
+            0% { top: 40px; left: 40px; width: 0; height: 0; opacity: 0; }
+            4.9% { top: 40px; left: 40px; width: 0; height: 0; opacity: 0; }
+            5% { top: 40px; left: 40px; width: 0; height: 0; opacity: 1; }
+            100% { top: 0px; left: 0px; width: 80px; height: 80px; opacity: 0; }
+        }
+        
+        body #components-reconnect-modal {
+            position: fixed; top: 0; bottom: 0; left: 0; right: 0;
+            z-index: 10000 !important; /* Beats MudBlazor's 9999 */
+            display: none;
+            overflow: hidden;
+
+            /* The 'body' prefix gives us higher specificity to beat MudBlazor's !important */
+            background-color: rgba(0, 0, 0, 0.6) !important;
+            animation: components-reconnect-fadeInOpacity 0.5s ease-in-out;
+        }
+
+        #components-reconnect-modal.components-reconnect-show, 
+        #components-reconnect-modal.components-reconnect-failed, 
+        #components-reconnect-modal.components-reconnect-rejected {
+            display: block;
+        }
+        
+        .custom-reconnect-dialog {
+            position: relative;
+            background-color: var(--mud-palette-surface);
+            color: var(--mud-palette-text-primary);
+            border: 1px solid var(--mud-palette-lines-default);
+            width: 20rem;
+            margin: 20vh auto;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 3px 6px 2px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            font-family: var(--mud-typography-default-fontfamily);
+            
+            /* Original delayed fade/slide in */
+            opacity: 0;
+            animation: components-reconnect-slideUp 1.5s cubic-bezier(.05, .89, .25, 1.02) 0.3s, 
+                       components-reconnect-fadeInOpacity 0.5s ease-out 0.3s;
+            animation-fill-mode: forwards;
+            z-index: 10001;
+        }
+        
+        .components-rejoining-animation {
+            display: block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+
+        .components-rejoining-animation div {
+            position: absolute;
+            border: 3px solid var(--mud-palette-primary);
+            opacity: 1;
+            border-radius: 50%;
+            animation: components-rejoining-animation 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        }
+
+        .components-rejoining-animation div:nth-child(2) {
+            animation-delay: -0.5s;
+        }
+
+        .reconnect-state { display: none !important; flex-direction: column; align-items: center; gap: 1rem; }
+        .reconnect-state p { margin: 0; text-align: center; }
+
+        body #components-reconnect-modal.components-reconnect-show,
+        body #components-reconnect-modal.components-reconnect-failed,
+        body #components-reconnect-modal.components-reconnect-rejected {
+            display: block !important;
+        }
+
+        body #components-reconnect-modal.components-reconnect-show .show-reconnecting { display: flex !important; }
+        body #components-reconnect-modal.components-reconnect-failed .show-failed { display: flex !important; }
+        body #components-reconnect-modal.components-reconnect-rejected .show-rejected { display: flex !important; }
+    </style>
 </body>
 
 </html>
