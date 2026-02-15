@@ -9,6 +9,8 @@ services:
       - BRAIN_URL=brain:5050
       - VALKEY_URL=valkey://valkey:6379
     restart: unless-stopped
+    depends_on:
+      - brain
     networks:
       - internal
 
@@ -17,12 +19,22 @@ services:
       context: .
       dockerfile: services/brain/Dockerfile
     environment:
+      - ASPNETCORE_URLS=http://+:8080;http://+:5050
       - Valkey__Url=valkey:6379
+      - Mongo__Url=mongodb://mongo:27017
+      - Mongo__Database=narek-chatencjusz
+      - Asr__Url=asr:6060
     ports:
      - "8080:8080"
     restart: unless-stopped
+    depends_on:
+      - asr
+      - mongo
+      - valkey
     networks:
       - internal
+    volumes:
+      - brain_models:/app/models
 
   asr:
     build:
@@ -73,3 +85,4 @@ networks:
 volumes:
   asr_model_cache:
   mongo_data:
+  brain_models:

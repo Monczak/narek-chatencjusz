@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.1.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
