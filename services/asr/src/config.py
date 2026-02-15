@@ -1,3 +1,4 @@
+from pydantic import computed_field
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -12,6 +13,15 @@ class Settings(BaseSettings):
     grpc_port: int = 6060
     min_utterance_seconds: float = 0.5
 
+    languages: str = ""
+
     class Config:
         env_file = ".env"
         env_prefix = "ASR_"
+
+    @computed_field
+    @property
+    def allowed_languages(self) -> frozenset[str]:
+        if not self.languages.strip():
+            return frozenset()
+        return frozenset(code.strip().lower() for code in self.languages.split(",") if code.strip())

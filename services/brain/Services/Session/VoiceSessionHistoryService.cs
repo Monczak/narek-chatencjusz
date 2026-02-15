@@ -1,5 +1,7 @@
 using BrainService.Domain.Asr;
 using BrainService.Domain.Session;
+using BrainService.Hubs;
+using Microsoft.AspNetCore.SignalR;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -10,11 +12,13 @@ public class VoiceSessionHistoryService
     private readonly IMongoCollection<VoiceSessionDocument> _sessionCollection;
     private readonly IMongoCollection<VoiceSessionEventDocument> _eventCollection;
     private readonly ILogger<VoiceSessionHistoryService> _logger;
+    private readonly IHubContext<DashboardHub> _hubContext;
     
-    public VoiceSessionHistoryService(IMongoDatabase db, ILogger<VoiceSessionHistoryService> logger)
+    public VoiceSessionHistoryService(IMongoDatabase db, IHubContext<DashboardHub> hubContext, ILogger<VoiceSessionHistoryService> logger)
     {
         _sessionCollection = db.GetCollection<VoiceSessionDocument>("voice_sessions");
         _eventCollection = db.GetCollection<VoiceSessionEventDocument>("voice_session_events");
+        _hubContext = hubContext;
         _logger = logger;
         
         EnsureIndexes();
@@ -58,7 +62,7 @@ public class VoiceSessionHistoryService
     public async Task<List<VoiceSessionEventDocument>> GetEventsAsync(string sessionId, int limit = 200) =>
         await _eventCollection
             .Find(Builders<VoiceSessionEventDocument>.Filter.Eq(s => s.SessionId, sessionId))
-            .Sort(Builders<VoiceSessionEventDocument>.Sort.Descending(s => s.Timestamp))
+            .Sort(Builders<VoiceSessionEventDocument>.Sort.Ascending(e => e.Timestamp))
             .Limit(limit)
             .ToListAsync();
 
@@ -86,8 +90,9 @@ public class VoiceSessionHistoryService
         {
             { "display_name", displayName },
         });
-    
-    public async Task AppendTranscriptAsync(TranscriptResult transcript) =>
+
+    public async Task AppendTranscriptAsync(TranscriptResult transcript)
+    {
         await AppendEventAsync(transcript.SessionId, VoiceSessionEventType.Transcript, transcript.UserId, new BsonDocument
         {
             { "text", transcript.Text },
@@ -95,6 +100,10 @@ public class VoiceSessionHistoryService
             { "language", transcript.Language },
             { "ended_at", transcript.EndedAt },
         }, transcript.StartedAt);
+        
+        await _hubContext.Clients.All.SendAsync("TranscriptReceived", transcript.SessionId);
+    }
+    
     public async Task MarkSessionEndedAsync(string sessionId)
     {
         try

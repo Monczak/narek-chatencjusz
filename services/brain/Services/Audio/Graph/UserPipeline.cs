@@ -79,7 +79,7 @@ public sealed class UserPipeline
         );
         
         var resampleUp = new ResamplerNode(
-            vad.Output,
+            asrTap.Output,
             16000,
             48000,
             loggerFactory.CreateLogger<ResamplerNode>()
