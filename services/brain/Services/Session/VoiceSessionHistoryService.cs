@@ -99,6 +99,20 @@ public class VoiceSessionHistoryService
             .Limit(limit)
             .ToListAsync();
     }
+    
+    public async Task<List<(long GuildId, string GuildName)>> GetKnownGuildsAsync()
+    {
+        var sessions = await _sessionCollection
+            .Find(Builders<VoiceSessionDocument>.Filter.Empty)
+            .Sort(Builders<VoiceSessionDocument>.Sort.Descending(s => s.StartedAt))
+            .Project(s => new { s.GuildId, s.GuildName })
+            .ToListAsync();
+
+        return sessions
+            .DistinctBy(s => s.GuildId)
+            .Select(s => (s.GuildId, s.GuildName))
+            .ToList();
+    }
 
     public async Task AppendUserJoinedAsync(string sessionId, ulong userId, string displayName)
     {

@@ -1,9 +1,8 @@
 @page "/guild-settings"
 @using BrainService.Domain.Llm
-@using BrainService.Domain.Session
 @using BrainService.Services.Llm
 @inject GuildSettingsService SettingsService
-@inject VoiceSessionService SessionService
+@inject VoiceSessionHistoryService HistoryService
 @inject ISnackbar Snackbar
 
 <MudText Typo="Typo.h4" Class="mb-4">Guild LLM Settings</MudText>
@@ -14,39 +13,17 @@
         <MudCard>
             <MudCardContent>
                 <MudGrid AlignItems="AlignItems.Center">
-                    <MudItem xs="12" sm="6" md="4">
-                        <MudSelect T="ulong?" Label="Active Sessions" Value="_selectedGuildId"
-                                   ValueChanged="OnGuildSelected"
-                                   Variant="Variant.Outlined" Dense="true"
-                                   Placeholder="Pick an active session...">
-                            @foreach (var session in _activeSessions)
+                    <MudItem xs="12" sm="8" md="6">
+                        <MudSelect T="ulong?" Label="Select Guild" Value="_selectedGuildId"
+                                   ValueChanged="OnGuildSelected" Variant="Variant.Outlined" Dense="true"
+                                   Placeholder="Pick a guild to edit...">
+                            @foreach (var guild in _knownGuilds)
                             {
-                                <MudSelectItem T="ulong?" Value="@((ulong?)session.GuildId)">
-                                    @session.GuildName (@session.GuildId)
+                                <MudSelectItem T="ulong?" Value="@((ulong?)guild.GuildId)">
+                                    @guild.GuildName (@guild.GuildId)
                                 </MudSelectItem>
                             }
                         </MudSelect>
-                    </MudItem>
-                    <MudItem xs="12" sm="6" md="4">
-                        <MudSelect T="ulong?" Label="Stored Overrides" Value="_selectedGuildId"
-                                   ValueChanged="OnGuildSelected"
-                                   Variant="Variant.Outlined" Dense="true"
-                                   Placeholder="Pick a guild with stored settings...">
-                            @foreach (var s in _storedSettings)
-                            {
-                                <MudSelectItem T="ulong?" Value="@((ulong?)s.GuildId)">
-                                    Guild @s.GuildId
-                                </MudSelectItem>
-                            }
-                        </MudSelect>
-                    </MudItem>
-                    <MudItem xs="12" sm="12" md="4">
-                        <MudTextField @bind-Value="_manualGuildId" Label="Or enter Guild ID manually"
-                                      Variant="Variant.Outlined" Dense="true"
-                                      Adornment="Adornment.End"
-                                      AdornmentIcon="@Icons.Material.Filled.ArrowForward"
-                                      OnAdornmentClick="LoadManualGuild"
-                                      @onkeydown="OnManualKeyDown" />
                     </MudItem>
                 </MudGrid>
             </MudCardContent>
@@ -241,18 +218,15 @@
 </MudGrid>
 
 @code {
-    private List<VoiceSessionState> _activeSessions = [];
-    private List<GuildLlmSettings> _storedSettings  = [];
+    private List<(long GuildId, string GuildName)> _knownGuilds = [];
 
     private ulong? _selectedGuildId;
-    private string _manualGuildId = string.Empty;
 
     private GuildLlmSettings? _edit;
     private ResolvedLlmSettings? _defaults;
     private bool _isLoading;
     private bool _isSaving;
 
-    // Slider needs a non-nullable float intermediary
     private float EditTemperature
     {
         get => _edit?.Temperature ?? _defaults?.Temperature ?? 0.8f;
@@ -261,8 +235,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _activeSessions = await SessionService.GetSessionStatesAsync();
-        _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
+        _knownGuilds = await HistoryService.GetKnownGuildsAsync();
         _defaults = SettingsService.GetDefaults();
     }
 
@@ -270,19 +243,11 @@
     {
         if (guildId.HasValue)
             await LoadGuild(guildId.Value);
-    }
-
-    private async Task LoadManualGuild()
-    {
-        if (ulong.TryParse(_manualGuildId.Trim(), out var id))
-            await LoadGuild(id);
         else
-            Snackbar.Add("Invalid guild ID — must be a numeric snowflake.", Severity.Warning);
-    }
-
-    private async Task OnManualKeyDown(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") await LoadManualGuild();
+        {
+            _selectedGuildId = null;
+            _edit = null;
+        }
     }
 
     private async Task LoadGuild(ulong guildId)
@@ -313,9 +278,6 @@
         {
             _edit.GuildId = _selectedGuildId.Value;
             await SettingsService.SaveSettingsAsync(_edit);
-
-            // Refresh stored list in case this is a new entry
-            _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
             Snackbar.Add("Settings saved.", Severity.Success);
         }
         catch (Exception ex)
@@ -336,8 +298,7 @@
         {
             await SettingsService.DeleteSettingsAsync(_selectedGuildId.Value);
             _edit = new GuildLlmSettings { GuildId = _selectedGuildId.Value };
-            _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
-            Snackbar.Add("All overrides cleared — guild is using server defaults.", Severity.Info);
+            Snackbar.Add("All overrides cleared - guild is using server defaults.", Severity.Info);
         }
         catch (Exception ex)
         {

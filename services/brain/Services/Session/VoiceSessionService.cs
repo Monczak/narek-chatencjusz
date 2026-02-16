@@ -168,7 +168,7 @@ public class VoiceSessionService(
             var runtime = _runtimeStates.GetOrAdd(sessionId, _ => new SessionRuntimeState());
             if (resultingState is VoiceSessionMachineState.Thinking or VoiceSessionMachineState.Speaking)
             {
-                // Can't inject into context right now — queue it
+                // Can't inject into context right now - queue it
                 var pendingDoc = new VoiceSessionEventDocument
                 {
                     SessionId = sessionId,
@@ -183,7 +183,7 @@ public class VoiceSessionService(
             else if (resultingState == VoiceSessionMachineState.Idle
                      && evt.UserState.ChangeType == UserVoiceStateUpdate.Types.ChangeType.Joined)
             {
-                // User joined while idle — start grace timer
+                // User joined while idle - start grace timer
                 var settings = await settingsService.GetSettingsAsync(evt.Guild.Id);
                 StartGraceTimer(sessionId, evt.Guild.Id, settings.UserJoinGraceMs, runtime);
             }

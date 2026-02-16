@@ -178,7 +178,7 @@ public partial class LlmContextBuilder(
     {
         return reason switch
         {
-            LlmContextReason.UserSilence => null, // No hint needed — normal flow
+            LlmContextReason.UserSilence => null, // No hint needed - normal flow
             LlmContextReason.Ramble      => settings.RambleSystemHint,
             LlmContextReason.UserJoined  => "[A user just joined the channel. Greet them if appropriate.]",
             LlmContextReason.UserLeft    => "[A user just left the channel. Say goodbye to them if appropriate.]",

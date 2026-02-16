@@ -1,3 +1,6 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
+
 namespace BrainService.Domain.Llm;
 
 public enum LlmProviderType
@@ -6,8 +9,12 @@ public enum LlmProviderType
     OpenAi
 }
 
+[BsonIgnoreExtraElements]
 public class GuildLlmSettings
 {
+    [BsonId]
+    public ObjectId Id { get; set; }
+    
     public ulong GuildId { get; set; }
 
     public string? SystemPrompt { get; set; }

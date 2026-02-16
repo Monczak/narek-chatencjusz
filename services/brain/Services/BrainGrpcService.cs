@@ -261,7 +261,7 @@ public class BrainGrpcService(
         RambleModeEnabled  = s.RambleModeEnabled,
         RambleThresholdMs  = s.RambleThresholdMs,
         TimeZone           = s.TimeZone,
-        // Nullable fields — only set if present
+        // Nullable fields - only set if present
         CustomInstructions = s.CustomInstructions ?? "",
         RambleSystemHint   = s.RambleSystemHint,
     };
