@@ -24,7 +24,8 @@ services:
       - Mongo__Url=mongodb://mongo:27017
       - Mongo__Database=narek-chatencjusz
       - Asr__Url=asr:6060
-      - Llm__PromptsDir=/app/prompts
+      - Llm__SystemPromptFile=/app/prompts/system_prompt.txt
+      - Llm__RambleHintFile=/app/prompts/ramble_hint.txt
       - Llm__Defaults__ProviderUrl=http://llm:7070
     ports:
      - "8080:8080"

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
@@ -72,14 +73,17 @@ public partial class LlmContextBuilder(
         {
             messages.AddRange(new LlmMessage("system", triggerHint));
         }
-
-        return new LlmRequest(
+        
+        var request = new LlmRequest(
             Messages: messages,
             Settings: new LlmGenerationSettings(
                 Temperature: settings.Temperature,
-                MaxTokens: settings.MaxTokens
+                MaxTokens: settings.MaxTokens,
+                Family: settings.Family
             ) // TODO: Add more settings once everything's stable
         );
+
+        return request;
     }
     
     private static string ApplyTemplates(ResolvedLlmSettings settings, VoiceSessionState sessionState)

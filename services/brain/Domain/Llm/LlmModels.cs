@@ -8,7 +8,8 @@ public record LlmGenerationSettings(
     float Temperature = 1.0f,
     int MaxTokens = 1024,
     float? TopP = null,
-    float? RepetitionPenalty = null
+    float? RepetitionPenalty = null,
+    LlmFamily Family = LlmFamily.Llama
 );
 
 public record LlmRequest(
@@ -41,4 +42,11 @@ public enum LlmContextReason
     Ramble,
     UserJoined,
     UserLeft,
+}
+
+public enum LlmFamily
+{
+    Llama,
+    Gemma,
+    Mistral,
 }

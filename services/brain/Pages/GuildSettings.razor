@@ -312,6 +312,7 @@
 
     private static GuildLlmSettings CloneSettings(GuildLlmSettings s) => new()
     {
+        Id                      = s.Id,
         GuildId                 = s.GuildId,
         SystemPrompt            = s.SystemPrompt,
         CustomInstructions      = s.CustomInstructions,

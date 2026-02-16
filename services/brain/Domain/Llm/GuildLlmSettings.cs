@@ -13,7 +13,8 @@ public enum LlmProviderType
 public class GuildLlmSettings
 {
     [BsonId]
-    public ObjectId Id { get; set; }
+    [BsonIgnoreIfDefault]
+    public ObjectId Id { get; init; }
     
     public ulong GuildId { get; set; }
 
@@ -22,9 +23,10 @@ public class GuildLlmSettings
     public string? BotName { get; set; }
     
     public LlmProviderType? ProviderType { get; set; }
-
     public string? ProviderUrl { get; set; }
     public string? ModelName { get; set; }
+    public LlmFamily? Family { get; set; }
+    
     public float? Temperature { get; set; }
     public int? MaxTokens { get; set; }
     public int? ContextWindow { get; set; }
@@ -49,6 +51,7 @@ public record ResolvedLlmSettings(
     LlmProviderType ProviderType,
     string ProviderUrl,
     string? ModelName,
+    LlmFamily Family,
     float Temperature,
     int MaxTokens,
     int ContextWindow,

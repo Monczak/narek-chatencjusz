@@ -31,7 +31,7 @@ public class LlamaCppLlmProvider : ILlmProvider
             max_tokens = request.Settings.MaxTokens,
             top_p = request.Settings.TopP,
             repeat_penalty = request.Settings.RepetitionPenalty,
-            messages = request.Messages.Select(m => new { role = m.Role, content = m.Content }).ToList()
+            messages = NormalizeMessages(request.Messages, request.Settings.Family)
         };
 
         var json = JsonSerializer.Serialize(body);
@@ -143,5 +143,50 @@ public class LlamaCppLlmProvider : ILlmProvider
             : null;
         
         return new LlmStreamChunk(text, null, finishReason != null, finishReason);
+    }
+
+    private List<object> NormalizeMessages(IReadOnlyList<LlmMessage> messages, LlmFamily family)
+    {
+        var noSystemRole = family == LlmFamily.Mistral;
+        var requiresAlternating = family == LlmFamily.Gemma;
+
+        var collapsed = new List<LlmMessage>();
+        LlmMessage? current = null;
+
+        foreach (var msg in messages)
+        {
+            var targetRole = msg.Role;
+
+            // Map system role to user if the model doesn't support the system role
+            if (noSystemRole && targetRole == "system")
+            {
+                targetRole = "user";
+            }
+
+            if (current == null)
+            {
+                current = msg with { Role = targetRole };
+                continue;
+            }
+            
+            // Merge consecutive messages of the same role
+            // If a model requires strict alternation, merge trailing system events/hints into the last user message
+            if (current.Role == targetRole || (requiresAlternating && current.Role == "user" && targetRole == "system"))
+            {
+                current = current with { Content = current.Content + "\n\n" + msg.Content };
+            }
+            else
+            {
+                collapsed.Add(current);
+                current = msg with { Role = targetRole };
+            }
+        }
+
+        if (current != null)
+        {
+            collapsed.Add(current);
+        }
+        
+        return collapsed.Select(m => new { role = m.Role, content = m.Content }).Cast<object>().ToList();
     }
 }
