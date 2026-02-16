@@ -47,6 +47,8 @@ class SessionAudioStream:
             self._playback_loop(), name=f"playback-{self.guild_id}")
         logging.info("UDP audio started for session %s on port %d",
                      self.session_id, self._raw_sock.getsockname()[1])
+        
+        self.push_audio(0, SILENCE_FRAME)
 
     async def stop(self):
         self._stop_event.set()
