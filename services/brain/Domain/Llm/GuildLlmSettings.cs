@@ -30,6 +30,8 @@ public class GuildLlmSettings
     public int? RambleMinResponseLength { get; set; }
     
     public List<string>? EnabledTools { get; set; } // All tools enabled if null
+    
+    public string? TimeZone { get; set; }
 }
 
 public record ResolvedLlmSettings(
@@ -47,5 +49,6 @@ public record ResolvedLlmSettings(
     int RambleThresholdMs,
     string RambleSystemHint,
     int RambleMinResponseLength,
-    IReadOnlyList<string>? EnabledTools
+    IReadOnlyList<string>? EnabledTools,
+    string TimeZone
 );

@@ -32,7 +32,8 @@ public class GuildSettingsService
             RambleThresholdMs:       section.GetValue("RambleThresholdMs", 90_000),
             RambleSystemHint:        section["RambleSystemHint"] ?? DefaultRambleHint,
             RambleMinResponseLength: section.GetValue("RambleMinResponseLength", 10),
-            EnabledTools:            null
+            EnabledTools:            null,
+            TimeZone:                section["TimeZone"] ?? "UTC"
         );
 
         EnsureIndex();
@@ -81,7 +82,8 @@ public class GuildSettingsService
         RambleThresholdMs:       g?.RambleThresholdMs       ?? _defaults.RambleThresholdMs,
         RambleSystemHint:        g?.RambleSystemHint        ?? _defaults.RambleSystemHint,
         RambleMinResponseLength: g?.RambleMinResponseLength ?? _defaults.RambleMinResponseLength,
-        EnabledTools:            g?.EnabledTools            ?? _defaults.EnabledTools
+        EnabledTools:            g?.EnabledTools            ?? _defaults.EnabledTools,
+        TimeZone:                g?.TimeZone                ?? _defaults.TimeZone
     );
 
     private void EnsureIndex()

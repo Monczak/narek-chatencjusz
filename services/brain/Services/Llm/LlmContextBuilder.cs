@@ -5,7 +5,7 @@ using BrainService.Services.Session;
 
 namespace BrainService.Services.Llm;
 
-public class LlmContextBuilder(
+public partial class LlmContextBuilder(
     GuildSettingsService settingsService,
     VoiceSessionHistoryService historyService,
     ITokenCounter tokenCounter,
@@ -20,8 +20,8 @@ public class LlmContextBuilder(
         var settings = await settingsService.GetSettingsAsync(sessionState.GuildId);
         
         // Step 1: System prompt
-        var systemPrompt = ApplyTemplates(settings.SystemPrompt, settings.BotName, sessionState);
-        var dynamicBlock = BuildDynamicContextBlock(sessionState, settings);
+        var systemPrompt = ApplyTemplates(settings, sessionState);
+        var dynamicBlock = BuildDynamicContextBlock(settings, sessionState);
         
         // Step 2: Measure fixed token costs
         var systemPromptTokens = await tokenCounter.CountTokensAsync(systemPrompt, ct);
@@ -72,20 +72,31 @@ public class LlmContextBuilder(
         );
     }
     
-    private static string ApplyTemplates(string prompt, string botName, VoiceSessionState sessionState)
+    private static string ApplyTemplates(ResolvedLlmSettings settings, VoiceSessionState sessionState)
     {
-        var now = DateTime.UtcNow;
-        return Regex.Replace(prompt, @"\{\{(\w+)\}\}",m => m.Groups[1].Value switch
+        var timeZone = TimeZoneInfo.Utc;
+        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); } 
+        catch { /* fallback to Utc if string is invalid */ }
+    
+        var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
+        
+        return SystemPromptTemplateRegex().Replace(settings.SystemPrompt, m => m.Groups[1].Value switch
         {
-            "bot_name"   => botName,
+            "bot_name"   => settings.BotName,
             "guild_name" => sessionState.GuildName,
-            "datetime"   => now.ToString("dddd, dd MMMM yyyy, HH:mm UTC"),
+            "datetime"   => localTime.ToString("dddd, dd MMMM yyyy, HH:mm UTC"),
             _            => m.Value
         });
     }
     
-    private static string BuildDynamicContextBlock(VoiceSessionState sessionState, ResolvedLlmSettings settings)
+    private static string BuildDynamicContextBlock(ResolvedLlmSettings settings, VoiceSessionState sessionState)
     {
+        var timeZone = TimeZoneInfo.Utc;
+        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); } 
+        catch { /* fallback to Utc */ }
+        
+        var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
+        
         var users = sessionState.Users.Count > 0
             ? string.Join(", ", sessionState.Users.Select(u => u.DisplayName))
             : "none";
@@ -94,8 +105,8 @@ public class LlmContextBuilder(
 
         return $"""
                 ## Current Context
-                - Time: {DateTime.UtcNow:dddd, dd MMMM yyyy, HH:mm} UTC
-                - Server: {sessionState.GuildName}{(sessionState.ChannelName != null ? $" (channel name: {sessionState.ChannelName})" : "")}
+                - Time: {localTime:dddd, dd MMMM yyyy, HH:mm} {timeZone.StandardName}
+                                                               - Server: {sessionState.GuildName}{(sessionState.ChannelName != null ? $" (channel name: {sessionState.ChannelName})" : "")}
                 - Users currently in channel: {users}
                 """;
     }
@@ -179,4 +190,7 @@ public class LlmContextBuilder(
     
     private const int ContextWindowSafetyMargin = 64;
     private const int LlmContextEventLimit = 500;
+
+    [GeneratedRegex(@"\{\{(\w+)\}\}")]
+    private static partial Regex SystemPromptTemplateRegex();
 }
