@@ -19,6 +19,7 @@ class NarekChatencjuszBot(discord.Bot):
         util_cog_factory: Callable[..., Awaitable[discord.Cog]],
         state_cog_factory: Callable[..., Awaitable[discord.Cog]],
         voice_cog_factory: Callable[..., Awaitable[discord.Cog]],
+        config_cog_factory: Callable[..., Awaitable[discord.Cog]],
         debug_guild_ids: List[int],
         voice_service: VoiceService,
         command_listener: CommandListener,
@@ -41,6 +42,7 @@ class NarekChatencjuszBot(discord.Bot):
         self.util_cog_factory = util_cog_factory
         self.state_cog_factory = state_cog_factory
         self.voice_cog_factory = voice_cog_factory
+        self.config_cog_factory = config_cog_factory
 
         self.voice_service = voice_service
         self.command_listener = command_listener
@@ -54,6 +56,7 @@ class NarekChatencjuszBot(discord.Bot):
         self.add_cog(await self.util_cog_factory(bot=self))
         self.add_cog(await self.state_cog_factory(bot=self))
         self.add_cog(await self.voice_cog_factory(bot=self))
+        self.add_cog(await self.config_cog_factory(bot=self))
 
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")

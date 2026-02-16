@@ -1,0 +1,37 @@
+<div class="override-field mb-2">
+    <div class="d-flex align-center mb-1">
+        <MudCheckBox T="bool"
+                     Value="@IsOverridden"
+                     ValueChanged="IsOverriddenChanged"
+                     Size="Size.Small"
+                     Color="Color.Primary" />
+        <MudText Typo="Typo.body2" Class="ml-1">
+            @Label
+            @if (IsOverridden)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Star"
+                         Size="Size.Small"
+                         Color="Color.Warning"
+                         Class="ml-1"
+                         Style="vertical-align: middle;" />
+            }
+        </MudText>
+        @if (!IsOverridden && !string.IsNullOrEmpty(DefaultHint))
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                Default: @DefaultHint
+            </MudText>
+        }
+    </div>
+    <div style="@(IsOverridden ? "" : "opacity: 0.4; pointer-events: none")">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public bool IsOverridden { get; set; }
+    [Parameter, EditorRequired] public EventCallback<bool> IsOverriddenChanged { get; set; }
+    [Parameter] public string? DefaultHint { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

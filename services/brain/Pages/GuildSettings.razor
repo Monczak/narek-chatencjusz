@@ -1,0 +1,373 @@
+@page "/guild-settings"
+@using BrainService.Domain.Llm
+@using BrainService.Domain.Session
+@using BrainService.Services.Llm
+@inject GuildSettingsService SettingsService
+@inject VoiceSessionService SessionService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Guild LLM Settings</MudText>
+
+<MudGrid>
+    <!-- Guild Picker -->
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardContent>
+                <MudGrid AlignItems="AlignItems.Center">
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="ulong?" Label="Active Sessions" Value="_selectedGuildId"
+                                   ValueChanged="OnGuildSelected"
+                                   Variant="Variant.Outlined" Dense="true"
+                                   Placeholder="Pick an active session...">
+                            @foreach (var session in _activeSessions)
+                            {
+                                <MudSelectItem T="ulong?" Value="@((ulong?)session.GuildId)">
+                                    @session.GuildName (@session.GuildId)
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="ulong?" Label="Stored Overrides" Value="_selectedGuildId"
+                                   ValueChanged="OnGuildSelected"
+                                   Variant="Variant.Outlined" Dense="true"
+                                   Placeholder="Pick a guild with stored settings...">
+                            @foreach (var s in _storedSettings)
+                            {
+                                <MudSelectItem T="ulong?" Value="@((ulong?)s.GuildId)">
+                                    Guild @s.GuildId
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="12" md="4">
+                        <MudTextField @bind-Value="_manualGuildId" Label="Or enter Guild ID manually"
+                                      Variant="Variant.Outlined" Dense="true"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.ArrowForward"
+                                      OnAdornmentClick="LoadManualGuild"
+                                      @onkeydown="OnManualKeyDown" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <!-- Editor -->
+    @if (_isLoading)
+    {
+        <MudItem xs="12" Class="d-flex justify-center mt-8">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </MudItem>
+    }
+    else if (_selectedGuildId.HasValue && _edit != null && _defaults != null)
+    {
+        <MudItem xs="12">
+            <MudAlert Severity="Severity.Info" Dense="true">
+                Editing Guild <strong>@_selectedGuildId</strong>.
+                Fields marked with <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" /> override the server default.
+                Uncheck a field to revert it to the default.
+            </MudAlert>
+        </MudItem>
+
+        <!-- Identity -->
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Identity</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <OverrideField Label="Bot Name"
+                                          IsOverridden="@(_edit.BotName != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.BotName = null; else _edit.BotName = _defaults.BotName; }"
+                                          DefaultHint="@_defaults.BotName">
+                                <MudTextField @bind-Value="_edit.BotName"
+                                              Variant="Variant.Outlined" Dense="true"
+                                              Placeholder="@_defaults.BotName" />
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <OverrideField Label="System Prompt"
+                                          IsOverridden="@(_edit.SystemPrompt != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.SystemPrompt = null; else _edit.SystemPrompt = _defaults.SystemPrompt; }"
+                                          DefaultHint="@("Using server default system prompt")">
+                                <MudTextField @bind-Value="_edit.SystemPrompt"
+                                              Variant="Variant.Outlined" Lines="6"
+                                              Placeholder="@_defaults.SystemPrompt" />
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <OverrideField Label="Custom Instructions"
+                                          IsOverridden="@(_edit.CustomInstructions != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.CustomInstructions = null; else _edit.CustomInstructions = string.Empty; }"
+                                          DefaultHint="@("None")">
+                                <MudTextField @bind-Value="_edit.CustomInstructions"
+                                              Variant="Variant.Outlined" Lines="3"
+                                              Placeholder="Additional instructions appended after the system prompt..." />
+                            </OverrideField>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Generation -->
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Generation</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Temperature"
+                                          IsOverridden="@(_edit.Temperature != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.Temperature = null; else _edit.Temperature = _defaults.Temperature; }"
+                                          DefaultHint="@_defaults.Temperature.ToString("F2")">
+                                <MudSlider @bind-Value="EditTemperature"
+                                           Min="0f" Max="2f" Step="0.05f"
+                                           Color="Color.Primary">
+                                    @(EditTemperature.ToString("F2"))
+                                </MudSlider>
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Max Tokens"
+                                          IsOverridden="@(_edit.MaxTokens != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.MaxTokens = null; else _edit.MaxTokens = _defaults.MaxTokens; }"
+                                          DefaultHint="@_defaults.MaxTokens.ToString()">
+                                <MudNumericField @bind-Value="_edit.MaxTokens"
+                                                 Variant="Variant.Outlined" Dense="true"
+                                                 Min="64" Max="8192" />
+                            </OverrideField>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Timing -->
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Timing</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Silence Threshold (ms)"
+                                          IsOverridden="@(_edit.SilenceThresholdMs != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.SilenceThresholdMs = null; else _edit.SilenceThresholdMs = _defaults.SilenceThresholdMs; }"
+                                          DefaultHint="@_defaults.SilenceThresholdMs.ToString()">
+                                <MudNumericField @bind-Value="_edit.SilenceThresholdMs"
+                                                 Variant="Variant.Outlined" Dense="true"
+                                                 Min="300" Max="10000" />
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Time Zone"
+                                          IsOverridden="@(_edit.TimeZone != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.TimeZone = null; else _edit.TimeZone = _defaults.TimeZone; }"
+                                          DefaultHint="@_defaults.TimeZone">
+                                <MudTextField @bind-Value="_edit.TimeZone"
+                                              Variant="Variant.Outlined" Dense="true"
+                                              Placeholder="e.g. Europe/London, America/New_York" />
+                            </OverrideField>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Ramble Mode -->
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Ramble Mode</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Enable Ramble Mode"
+                                          IsOverridden="@(_edit.RambleModeEnabled != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.RambleModeEnabled = null; else _edit.RambleModeEnabled = _defaults.RambleModeEnabled; }"
+                                          DefaultHint="@(_defaults.RambleModeEnabled ? "Enabled" : "Disabled")">
+                                <MudSwitch @bind-Value="_edit.RambleModeEnabled"
+                                           Color="Color.Success"
+                                           Label="@(_edit.RambleModeEnabled == true ? "Enabled" : "Disabled")" />
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <OverrideField Label="Ramble Threshold (ms)"
+                                          IsOverridden="@(_edit.RambleThresholdMs != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.RambleThresholdMs = null; else _edit.RambleThresholdMs = _defaults.RambleThresholdMs; }"
+                                          DefaultHint="@_defaults.RambleThresholdMs.ToString()">
+                                <MudNumericField @bind-Value="_edit.RambleThresholdMs"
+                                                 Variant="Variant.Outlined" Dense="true"
+                                                 Min="10000" Max="600000" />
+                            </OverrideField>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <OverrideField Label="Ramble System Hint"
+                                          IsOverridden="@(_edit.RambleSystemHint != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.RambleSystemHint = null; else _edit.RambleSystemHint = _defaults.RambleSystemHint; }"
+                                          DefaultHint="@("Using server default hint")">
+                                <MudTextField @bind-Value="_edit.RambleSystemHint"
+                                              Variant="Variant.Outlined" Lines="2"
+                                              Placeholder="@_defaults.RambleSystemHint" />
+                            </OverrideField>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick=@SaveAsync Disabled="_isSaving">
+                        @if (_isSaving)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Save
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                               OnClick=@ResetAllAsync Disabled="_isSaving" Class="ml-2">
+                        Reset All to Defaults
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private List<VoiceSessionState> _activeSessions = [];
+    private List<GuildLlmSettings> _storedSettings  = [];
+
+    private ulong? _selectedGuildId;
+    private string _manualGuildId = string.Empty;
+
+    private GuildLlmSettings? _edit;
+    private ResolvedLlmSettings? _defaults;
+    private bool _isLoading;
+    private bool _isSaving;
+
+    // Slider needs a non-nullable float intermediary
+    private float EditTemperature
+    {
+        get => _edit?.Temperature ?? _defaults?.Temperature ?? 0.8f;
+        set => _edit?.Temperature = value;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeSessions = await SessionService.GetSessionStatesAsync();
+        _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
+        _defaults = SettingsService.GetDefaults();
+    }
+
+    private async Task OnGuildSelected(ulong? guildId)
+    {
+        if (guildId.HasValue)
+            await LoadGuild(guildId.Value);
+    }
+
+    private async Task LoadManualGuild()
+    {
+        if (ulong.TryParse(_manualGuildId.Trim(), out var id))
+            await LoadGuild(id);
+        else
+            Snackbar.Add("Invalid guild ID — must be a numeric snowflake.", Severity.Warning);
+    }
+
+    private async Task OnManualKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadManualGuild();
+    }
+
+    private async Task LoadGuild(ulong guildId)
+    {
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            _selectedGuildId = guildId;
+            var raw = await SettingsService.GetRawSettingsAsync(guildId);
+            // Edit a copy so we can cancel without side effects
+            _edit = raw is null
+                ? new GuildLlmSettings { GuildId = guildId }
+                : CloneSettings(raw);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_edit is null || _selectedGuildId is null) return;
+        _isSaving = true;
+        try
+        {
+            _edit.GuildId = _selectedGuildId.Value;
+            await SettingsService.SaveSettingsAsync(_edit);
+
+            // Refresh stored list in case this is a new entry
+            _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
+            Snackbar.Add("Settings saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ResetAllAsync()
+    {
+        if (_selectedGuildId is null) return;
+        _isSaving = true;
+        try
+        {
+            await SettingsService.DeleteSettingsAsync(_selectedGuildId.Value);
+            _edit = new GuildLlmSettings { GuildId = _selectedGuildId.Value };
+            _storedSettings = (await SettingsService.GetAllRawSettingsAsync()).ToList();
+            Snackbar.Add("All overrides cleared — guild is using server defaults.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Reset failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private static GuildLlmSettings CloneSettings(GuildLlmSettings s) => new()
+    {
+        GuildId                 = s.GuildId,
+        SystemPrompt            = s.SystemPrompt,
+        CustomInstructions      = s.CustomInstructions,
+        BotName                 = s.BotName,
+        ProviderType            = s.ProviderType,
+        ProviderUrl             = s.ProviderUrl,
+        ModelName               = s.ModelName,
+        Temperature             = s.Temperature,
+        MaxTokens               = s.MaxTokens,
+        ContextWindow           = s.ContextWindow,
+        SilenceThresholdMs      = s.SilenceThresholdMs,
+        UserJoinGraceMs         = s.UserJoinGraceMs,
+        RambleModeEnabled       = s.RambleModeEnabled,
+        RambleThresholdMs       = s.RambleThresholdMs,
+        RambleSystemHint        = s.RambleSystemHint,
+        RambleMinResponseLength = s.RambleMinResponseLength,
+        EnabledTools            = s.EnabledTools is null ? null : [..s.EnabledTools],
+        TimeZone                = s.TimeZone,
+    };
+}

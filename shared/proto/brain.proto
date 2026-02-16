@@ -15,6 +15,10 @@ service Brain {
   // Voice session state and events
   rpc NotifyVoiceState (VoiceStateNotification) returns (VoiceStateAck);
   rpc StreamVoiceSessionEvents (stream VoiceSessionEvent) returns (VoiceSessionEventAck);
+
+  // Per-guild LLM configuration
+  rpc GetGuildSettings (GetGuildSettingsRequest) returns (GetGuildSettingsResponse);
+  rpc UpdateGuildSettings (UpdateGuildSettingsRequest) returns (UpdateGuildSettingsResponse);
 }
 
 message GuildContext {
@@ -167,4 +171,40 @@ message BrainCommand {
     DisconnectVoice disconnect = 2;
     ErrorMessage error = 3;
   }
+}
+
+// --- Per-Guild LLM Configuration ---
+
+// All fields are optional; absent means "not overriding the server default".
+message GuildLlmConfig {
+  optional string system_prompt = 1;
+  optional string custom_instructions = 2;
+  optional string bot_name = 3;
+  optional float temperature = 4;
+  optional int32 max_tokens = 5;
+  optional int32 silence_threshold_ms = 6;
+  optional bool ramble_mode_enabled = 7;
+  optional int32 ramble_threshold_ms = 8;
+  optional string ramble_system_hint = 9;
+  optional string time_zone = 10;
+}
+
+message GetGuildSettingsRequest {
+  uint64 guild_id = 1;
+}
+
+message GetGuildSettingsResponse {
+  GuildLlmConfig resolved = 1;
+  GuildLlmConfig overrides = 2;
+}
+
+message UpdateGuildSettingsRequest {
+  uint64 guild_id = 1;
+  GuildLlmConfig patch = 2;
+  repeated string clear_fields = 3;
+}
+
+message UpdateGuildSettingsResponse {
+  bool success = 1;
+  string message = 2;
 }

@@ -16,12 +16,11 @@ public class GuildSettingsService
         _logger = logger;
         _collection = db.GetCollection<GuildLlmSettings>("guild_llm_settings");
         
-        var promptsDir = config.GetValue<string>("Llm:PromptsDir");
         var systemPrompt = TryReadPromptFile(config.GetValue<string>("Llm:SystemPromptFile"), DefaultPrompt);
         var rambleHint = TryReadPromptFile(config.GetValue<string>("Llm:RambleHintFile"), DefaultRambleHint);
 
         var section = config.GetSection("Llm:Defaults");
-            _defaults = new ResolvedLlmSettings(
+        _defaults = new ResolvedLlmSettings(
             SystemPrompt:            section["SystemPrompt"] ?? systemPrompt,
             CustomInstructions:      section["CustomInstructions"],
             BotName:                 section["BotName"] ?? "Narek Narencjusz",
@@ -43,7 +42,7 @@ public class GuildSettingsService
 
         EnsureIndex();
     }
-
+    
     public async Task<ResolvedLlmSettings> GetSettingsAsync(ulong guildId)
     {
         if (_cache.TryGetValue(guildId, out var settings))
@@ -58,7 +57,21 @@ public class GuildSettingsService
         _cache[guildId] = resolved;
         return resolved;
     }
+    
+    public async Task<GuildLlmSettings?> GetRawSettingsAsync(ulong guildId)
+    {
+        return await _collection
+            .Find(Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId))
+            .FirstOrDefaultAsync();
+    }
 
+    public async Task<IReadOnlyList<GuildLlmSettings>> GetAllRawSettingsAsync()
+    {
+        return await _collection
+            .Find(Builders<GuildLlmSettings>.Filter.Empty)
+            .ToListAsync();
+    }
+    
     public async Task SaveSettingsAsync(GuildLlmSettings settings)
     {
         await _collection.ReplaceOneAsync(
@@ -70,6 +83,14 @@ public class GuildSettingsService
         _logger.LogInformation("Saved LLM settings for {GuildId}", settings.GuildId);
     }
     
+    public async Task DeleteSettingsAsync(ulong guildId)
+    {
+        await _collection.DeleteOneAsync(
+            Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId));
+        _cache.TryRemove(guildId, out _);
+        _logger.LogInformation("Deleted LLM settings for {GuildId}", guildId);
+    }
+
     public ResolvedLlmSettings GetDefaults() => _defaults;
 
     private ResolvedLlmSettings Resolve(GuildLlmSettings? g) => new(
@@ -131,5 +152,5 @@ public class GuildSettingsService
         "The current date and time is {{datetime}}.";
 
     private const string DefaultRambleHint =
-        "[No one has spoken for a while. You may speek freely if you have something to say, or stay quiet.]";
+        "[No one has spoken for a while. You may speak freely if you have something to say, or stay quiet.]";
 }

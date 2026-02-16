@@ -1,5 +1,7 @@
+using BrainService.Domain.Llm;
 using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
+using BrainService.Services.Llm;
 using BrainService.Services.Session;
 using Grpc.Core;
 
@@ -11,6 +13,7 @@ public class BrainGrpcService(
     CommandPublisher publisher,
     VoiceSessionService voiceSessionService,
     AudioGraphFactory audioGraphFactory,
+    GuildSettingsService guildSettingsService,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -180,5 +183,102 @@ public class BrainGrpcService(
         }
 
         return new VoiceSessionEventAck { Success = true };
+    }
+    
+    public override async Task<GetGuildSettingsResponse> GetGuildSettings(
+        GetGuildSettingsRequest request,
+        ServerCallContext context)
+    {
+        var guildId = request.GuildId;
+
+        var raw = await guildSettingsService.GetRawSettingsAsync(guildId);
+        var resolved = await guildSettingsService.GetSettingsAsync(guildId);
+
+        return new GetGuildSettingsResponse
+        {
+            Resolved = ToProto(resolved),
+            Overrides = raw is null ? new GuildLlmConfig() : ToRawProto(raw),
+        };
+    }
+
+    public override async Task<UpdateGuildSettingsResponse> UpdateGuildSettings(
+        UpdateGuildSettingsRequest request,
+        ServerCallContext context)
+    {
+        var guildId = request.GuildId;
+
+        // Load existing raw overrides (or start from scratch)
+        var raw = await guildSettingsService.GetRawSettingsAsync(guildId)
+                  ?? new GuildLlmSettings { GuildId = guildId };
+
+        // Apply the patch - only write fields that are present in the proto message
+        var p = request.Patch;
+        if (p.HasSystemPrompt)       raw.SystemPrompt       = p.SystemPrompt;
+        if (p.HasCustomInstructions) raw.CustomInstructions = p.CustomInstructions;
+        if (p.HasBotName)            raw.BotName            = p.BotName;
+        if (p.HasTemperature)        raw.Temperature        = p.Temperature;
+        if (p.HasMaxTokens)          raw.MaxTokens          = p.MaxTokens;
+        if (p.HasSilenceThresholdMs) raw.SilenceThresholdMs = p.SilenceThresholdMs;
+        if (p.HasRambleModeEnabled)  raw.RambleModeEnabled  = p.RambleModeEnabled;
+        if (p.HasRambleThresholdMs)  raw.RambleThresholdMs  = p.RambleThresholdMs;
+        if (p.HasRambleSystemHint)   raw.RambleSystemHint   = p.RambleSystemHint;
+        if (p.HasTimeZone)           raw.TimeZone           = p.TimeZone;
+
+        // Honor explicit clears - set fields back to null so defaults take over
+        foreach (var field in request.ClearFields)
+        {
+            switch (field)
+            {
+                case "system_prompt":        raw.SystemPrompt       = null; break;
+                case "custom_instructions":  raw.CustomInstructions = null; break;
+                case "bot_name":             raw.BotName            = null; break;
+                case "temperature":          raw.Temperature        = null; break;
+                case "max_tokens":           raw.MaxTokens          = null; break;
+                case "silence_threshold_ms": raw.SilenceThresholdMs = null; break;
+                case "ramble_mode_enabled":  raw.RambleModeEnabled  = null; break;
+                case "ramble_threshold_ms":  raw.RambleThresholdMs  = null; break;
+                case "ramble_system_hint":   raw.RambleSystemHint   = null; break;
+                case "time_zone":            raw.TimeZone           = null; break;
+                default:
+                    logger.LogWarning("UpdateGuildSettings: unknown clear_field name '{Field}'", field);
+                    break;
+            }
+        }
+
+        await guildSettingsService.SaveSettingsAsync(raw);
+        logger.LogInformation("UpdateGuildSettings applied for guild {GuildId}", guildId);
+
+        return new UpdateGuildSettingsResponse { Success = true, Message = "Settings updated." };
+    }
+    
+    private static GuildLlmConfig ToProto(ResolvedLlmSettings s) => new()
+    {
+        SystemPrompt       = s.SystemPrompt,
+        BotName            = s.BotName,
+        Temperature        = s.Temperature,
+        MaxTokens          = s.MaxTokens,
+        SilenceThresholdMs = s.SilenceThresholdMs,
+        RambleModeEnabled  = s.RambleModeEnabled,
+        RambleThresholdMs  = s.RambleThresholdMs,
+        TimeZone           = s.TimeZone,
+        // Nullable fields — only set if present
+        CustomInstructions = s.CustomInstructions ?? "",
+        RambleSystemHint   = s.RambleSystemHint,
+    };
+    
+    private static GuildLlmConfig ToRawProto(GuildLlmSettings s)
+    {
+        var cfg = new GuildLlmConfig();
+        if (s.SystemPrompt       != null) cfg.SystemPrompt       = s.SystemPrompt;
+        if (s.CustomInstructions != null) cfg.CustomInstructions = s.CustomInstructions;
+        if (s.BotName            != null) cfg.BotName            = s.BotName;
+        if (s.Temperature        != null) cfg.Temperature        = s.Temperature.Value;
+        if (s.MaxTokens          != null) cfg.MaxTokens          = s.MaxTokens.Value;
+        if (s.SilenceThresholdMs != null) cfg.SilenceThresholdMs = s.SilenceThresholdMs.Value;
+        if (s.RambleModeEnabled  != null) cfg.RambleModeEnabled  = s.RambleModeEnabled.Value;
+        if (s.RambleThresholdMs  != null) cfg.RambleThresholdMs  = s.RambleThresholdMs.Value;
+        if (s.RambleSystemHint   != null) cfg.RambleSystemHint   = s.RambleSystemHint;
+        if (s.TimeZone           != null) cfg.TimeZone           = s.TimeZone;
+        return cfg;
     }
 }

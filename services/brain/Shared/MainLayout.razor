@@ -3,6 +3,7 @@
 <MudThemeProvider IsDarkMode="true" Theme="@_customTheme"/>
 <MudDialogProvider/>
 <MudSnackbarProvider/>
+<MudPopoverProvider/>
 
 <MudLayout>
     <MudAppBar Elevation="1">
@@ -13,7 +14,8 @@
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
         <MudNavLink Href="/nodes" Icon="@Icons.Material.Filled.Computer">Nodes</MudNavLink>
-        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+        <MudNavLink Href="/guild-settings" Icon="@Icons.Material.Filled.Tune">Guild Settings</MudNavLink>
+        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Global Settings</MudNavLink>
     </MudDrawer>
     
     <MudMainContent>
