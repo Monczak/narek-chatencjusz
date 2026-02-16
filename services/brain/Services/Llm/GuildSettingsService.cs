@@ -15,13 +15,17 @@ public class GuildSettingsService
     {
         _logger = logger;
         _collection = db.GetCollection<GuildLlmSettings>("guild_llm_settings");
+        
+        var promptsDir = config.GetValue<string>("Llm:PromptsDir");
+        var systemPrompt = TryReadPromptFile(promptsDir, "system_prompt.txt", DefaultPrompt);
+        var rambleHint = TryReadPromptFile(promptsDir, "ramble_hint.txt", DefaultRambleHint);
 
         var section = config.GetSection("Llm:Defaults");
             _defaults = new ResolvedLlmSettings(
-            SystemPrompt:            section["SystemPrompt"] ?? DefaultPrompt,
+            SystemPrompt:            section["SystemPrompt"] ?? systemPrompt,
             BotName:                 section["BotName"] ?? "Narek Narencjusz",
             ProviderType:            section["ProviderType"] != null ? Enum.Parse<LlmProviderType>(section["ProviderType"]!, ignoreCase: true) : LlmProviderType.LlamaCpp,
-            LlmUrl:                  section["LlmUrl"] ?? "http://llm:7070",
+            ProviderUrl:             section["ProviderUrl"] ?? "http://llm:7070",
             ModelName:               section["ModelName"],
             Temperature:             section.GetValue("Temperature", 0.8f),
             MaxTokens:               section.GetValue("MaxTokens", 1024),
@@ -30,7 +34,7 @@ public class GuildSettingsService
             UserJoinGraceMs:         section.GetValue("UserJoinGraceMs", 3000),
             RambleModeEnabled:       section.GetValue("RambleModeEnabled", false),
             RambleThresholdMs:       section.GetValue("RambleThresholdMs", 90_000),
-            RambleSystemHint:        section["RambleSystemHint"] ?? DefaultRambleHint,
+            RambleSystemHint:        section["RambleSystemHint"] ?? rambleHint,
             RambleMinResponseLength: section.GetValue("RambleMinResponseLength", 10),
             EnabledTools:            null,
             TimeZone:                section["TimeZone"] ?? "UTC"
@@ -71,7 +75,7 @@ public class GuildSettingsService
         SystemPrompt:            g?.SystemPrompt            ?? _defaults.SystemPrompt,
         BotName:                 g?.BotName                 ?? _defaults.BotName,
         ProviderType:            g?.ProviderType            ?? _defaults.ProviderType,
-        LlmUrl:                  g?.LlmUrl                  ?? _defaults.LlmUrl,
+        ProviderUrl:                  g?.ProviderUrl                  ?? _defaults.ProviderUrl,
         ModelName:               g?.ModelName               ?? _defaults.ModelName,
         Temperature:             g?.Temperature             ?? _defaults.Temperature,
         MaxTokens:               g?.MaxTokens               ?? _defaults.MaxTokens,
@@ -92,6 +96,31 @@ public class GuildSettingsService
             Builders<GuildLlmSettings>.IndexKeys.Ascending(g => g.GuildId),
             new CreateIndexOptions { Unique = true, Background = true }
         ));
+    }
+    
+    private string TryReadPromptFile(string? promptsDir, string fileName, string fallback)
+    {
+        if (string.IsNullOrEmpty(promptsDir))
+            return fallback;
+
+        var path = Path.Combine(promptsDir, fileName);
+        if (!File.Exists(path))
+        {
+            _logger.LogWarning("Prompt file not found at {Path}, using built-in default", path);
+            return fallback;
+        }
+
+        try
+        {
+            var content = File.ReadAllText(path).Trim();
+            _logger.LogInformation("Loaded prompt from {Path}", path);
+            return string.IsNullOrWhiteSpace(content) ? fallback : content;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to read prompt file {Path}, using built-in default", path);
+            return fallback;
+        }
     }
 
     private const string DefaultPrompt =

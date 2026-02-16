@@ -15,7 +15,7 @@ public class GuildLlmSettings
     
     public LlmProviderType? ProviderType { get; set; }
 
-    public string? LlmUrl { get; set; }
+    public string? ProviderUrl { get; set; }
     public string? ModelName { get; set; }
     public float? Temperature { get; set; }
     public int? MaxTokens { get; set; }
@@ -38,7 +38,7 @@ public record ResolvedLlmSettings(
     string SystemPrompt,
     string BotName,
     LlmProviderType ProviderType,
-    string LlmUrl,
+    string ProviderUrl,
     string? ModelName,
     float Temperature,
     int MaxTokens,

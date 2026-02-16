@@ -24,6 +24,8 @@ services:
       - Mongo__Url=mongodb://mongo:27017
       - Mongo__Database=narek-chatencjusz
       - Asr__Url=asr:6060
+      - Llm__PromptsDir=/app/prompts
+      - Llm__Defaults__ProviderUrl=http://llm:7070
     ports:
      - "8080:8080"
     restart: unless-stopped
@@ -76,7 +78,7 @@ services:
     networks:
       - internal
     volumes:
-      - llm_models:/models
+      - ./models/model.gguf:/models/model.gguf
     deploy:
       resources:
         reservations:
@@ -110,4 +112,3 @@ volumes:
   asr_model_cache:
   mongo_data:
   brain_models:
-  llm_models:

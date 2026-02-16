@@ -106,8 +106,6 @@ public class VoiceSessionHistoryService
         {
             { "display_name", displayName },
         });   
-        
-        await _hubContext.Clients.All.SendAsync("UserJoined", sessionId);
     }
 
     public async Task AppendUserLeftAsync(string sessionId, ulong userId, string displayName)
@@ -116,8 +114,6 @@ public class VoiceSessionHistoryService
         {
             { "display_name", displayName },
         });
-        
-        await _hubContext.Clients.All.SendAsync("UserLeft", sessionId);
     }
 
     public async Task AppendTranscriptAsync(TranscriptResult transcript)

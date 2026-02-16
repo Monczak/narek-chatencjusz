@@ -10,13 +10,13 @@ public class LlmProviderFactory(IHttpClientFactory httpClientFactory, ILoggerFac
 
     public ILlmProvider GetProvider(ResolvedLlmSettings settings)
     {
-        var key = $"{settings.ProviderType}|{settings.LlmUrl}";
+        var key = $"{settings.ProviderType}|{settings.ProviderUrl}";
         return _providerCache.GetOrAdd(key, _ => CreateProvider(settings));
     }
     
     public ITokenCounter GetTokenCounter(ResolvedLlmSettings settings)
     {
-        var key = $"{settings.ProviderType}|{settings.LlmUrl}";
+        var key = $"{settings.ProviderType}|{settings.ProviderUrl}";
         return _counterCache.GetOrAdd(key, _ => CreateCounter(settings));
     }
 
@@ -24,7 +24,7 @@ public class LlmProviderFactory(IHttpClientFactory httpClientFactory, ILoggerFac
         settings.ProviderType switch
         {
             LlmProviderType.LlamaCpp => new LlamaCppLlmProvider(
-                settings.LlmUrl,
+                settings.ProviderUrl,
                 httpClientFactory,
                 loggerFactory.CreateLogger<LlamaCppLlmProvider>()),
             _ => throw new NotSupportedException($"Unknown LLM provider type: {settings.ProviderType}")
@@ -34,7 +34,7 @@ public class LlmProviderFactory(IHttpClientFactory httpClientFactory, ILoggerFac
         settings.ProviderType switch
         {
             LlmProviderType.LlamaCpp => new LlamaCppTokenCounter(
-                settings.LlmUrl,
+                settings.ProviderUrl,
                 httpClientFactory,
                 loggerFactory.CreateLogger<LlamaCppTokenCounter>()),
             _ => new FallbackTokenCounter()

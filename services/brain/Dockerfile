@@ -15,6 +15,8 @@ RUN dotnet publish -c Release -o /app/publish -p:ProtoBaseDir=/proto
 
 RUN cp /app/publish/runtimes/linux-x64/native/libonnxruntime.so /app/publish/onnxruntime.dll
 
+COPY prompts /app/prompts
+
 # Run stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 ENV ASPNETCORE_HTTP_PORTS=""
@@ -24,6 +26,9 @@ RUN apt-get update && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 COPY --from=build /app/publish .
+COPY --from=build /app/prompts ./prompts/
+
+ENV Llm_PromptsDir=/app/prompts
 
 EXPOSE 8080
 EXPOSE 5050
