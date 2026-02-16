@@ -125,7 +125,8 @@ class Container(containers.DeclarativeContainer):
 
     config_cog = providers.Factory(
         ConfigCog,
-        config_service=config_service
+        config_service=config_service,
+        response_service=response_service
     )
 
     command_listener = providers.Singleton(

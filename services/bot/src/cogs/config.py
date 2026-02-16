@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 
 from services.config import ConfigService
+from services.response import ResponseService
 from generated import brain_pb2
 
 class ConfigCog(commands.Cog):
@@ -11,9 +12,10 @@ class ConfigCog(commands.Cog):
     inst_group = config_group.create_subgroup("instructions", "Manage custom instructions appended to the prompt")
     ramble_group = config_group.create_subgroup("ramble", "Configure ramble (unprompted speech) mode")
 
-    def __init__(self, bot: discord.Bot, config_service: ConfigService) -> None:
+    def __init__(self, bot: discord.Bot, config_service: ConfigService, response_service: ResponseService) -> None:
         self.bot = bot
         self.config = config_service
+        self.response = response_service
 
     # Show
 
@@ -23,10 +25,10 @@ class ConfigCog(commands.Cog):
         try:
             resp = await self.config.get_settings(ctx.guild_id)  # type: ignore
             embed = _settings_embed(resp)
-            await ctx.respond(embed=embed, ephemeral=True)
+            await ctx.interaction.edit_original_response(embed=embed)
         except Exception as e:
             logging.error("config show failed: %s", e)
-            await ctx.respond("Failed to fetch settings from Brain.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to fetch settings from Brain.", ephemeral=True)
 
     # Name
 
@@ -39,10 +41,15 @@ class ConfigCog(commands.Cog):
         await ctx.defer(ephemeral=True)
         try:
             await self.config.set_bot_name(ctx.guild_id, name)  # type: ignore
-            await ctx.respond(f"Bot name set to **{name}**.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Bot name updated", 
+                f"Bot name set to **{name}**.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("config name failed: %s", e)
-            await ctx.respond("Failed to update settings.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update settings.", ephemeral=True)
 
     # Temperature
 
@@ -55,10 +62,15 @@ class ConfigCog(commands.Cog):
         await ctx.defer(ephemeral=True)
         try:
             await self.config.set_temperature(ctx.guild_id, value)  # type: ignore
-            await ctx.respond(f"Temperature set to **{value}**.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Temperature updated", 
+                f"Temperature set to **{value}**.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("config temperature failed: %s", e)
-            await ctx.respond("Failed to update settings.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update settings.", ephemeral=True)
 
     # Silence threshold
 
@@ -72,10 +84,15 @@ class ConfigCog(commands.Cog):
         try:
             ms = int(seconds * 1000)
             await self.config.set_silence_threshold(ctx.guild_id, ms)  # type: ignore
-            await ctx.respond(f"Silence threshold set to **{seconds}s** ({ms} ms).", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Silence threshold updated", 
+                f"Silence threshold set to **{seconds}s** ({ms} ms).", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("config silence-threshold failed: %s", e)
-            await ctx.respond("Failed to update settings.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update settings.", ephemeral=True)
 
     # Prompt
 
@@ -89,20 +106,30 @@ class ConfigCog(commands.Cog):
         try:
             await self.config.set_system_prompt(ctx.guild_id, text)  # type: ignore
             preview = text[:120] + "..." if len(text) > 120 else text
-            await ctx.respond(f"System prompt updated.\n> {preview}", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "System prompt updated", 
+                f"> {preview}", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("prompt set failed: %s", e)
-            await ctx.respond("Failed to update system prompt.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update system prompt.", ephemeral=True)
 
     @prompt_group.command(name="clear", description="Remove the custom system prompt and revert to the server default")
     async def prompt_clear(self, ctx: discord.ApplicationContext) -> None:
         await ctx.defer(ephemeral=True)
         try:
             await self.config.clear_system_prompt(ctx.guild_id)  # type: ignore
-            await ctx.respond("System prompt cleared - using server default.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "System prompt cleared", 
+                "Using server default system prompt.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("prompt clear failed: %s", e)
-            await ctx.respond("Failed to clear system prompt.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to clear system prompt.", ephemeral=True)
 
     # Custom instructions
 
@@ -115,20 +142,30 @@ class ConfigCog(commands.Cog):
         await ctx.defer(ephemeral=True)
         try:
             await self.config.set_custom_instructions(ctx.guild_id, text)  # type: ignore
-            await ctx.respond("Custom instructions updated.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Custom instructions updated", 
+                "New instructions have been saved.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("instructions set failed: %s", e)
-            await ctx.respond("Failed to update custom instructions.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update custom instructions.", ephemeral=True)
 
     @inst_group.command(name="clear", description="Remove the custom instructions for this server")
     async def instructions_clear(self, ctx: discord.ApplicationContext) -> None:
         await ctx.defer(ephemeral=True)
         try:
             await self.config.clear_custom_instructions(ctx.guild_id)  # type: ignore
-            await ctx.respond("Custom instructions cleared.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Custom instructions cleared", 
+                "Instructions removed.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("instructions clear failed: %s", e)
-            await ctx.respond("Failed to clear custom instructions.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to clear custom instructions.", ephemeral=True)
 
     # Ramble
 
@@ -142,10 +179,15 @@ class ConfigCog(commands.Cog):
         try:
             await self.config.set_ramble_enabled(ctx.guild_id, enabled)  # type: ignore
             state = "enabled" if enabled else "disabled"
-            await ctx.respond(f"Ramble mode {state}.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Ramble mode updated", 
+                f"Ramble mode **{state}**.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("ramble toggle failed: %s", e)
-            await ctx.respond("Failed to update ramble mode.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update ramble mode.", ephemeral=True)
 
     @ramble_group.command(name="threshold", description="Seconds of silence before the bot speaks unprompted (10 - 600)")
     async def ramble_threshold(
@@ -156,10 +198,15 @@ class ConfigCog(commands.Cog):
         await ctx.defer(ephemeral=True)
         try:
             await self.config.set_ramble_threshold(ctx.guild_id, seconds)  # type: ignore
-            await ctx.respond(f"Ramble threshold set to **{seconds}s**.", ephemeral=True)
+            await self.response.respond_success(
+                ctx, 
+                "Ramble threshold updated", 
+                f"Ramble threshold set to **{seconds}s**.", 
+                ephemeral=True
+            )
         except Exception as e:
             logging.error("ramble threshold failed: %s", e)
-            await ctx.respond("Failed to update ramble threshold.", ephemeral=True)
+            await self.response.respond_error(ctx, "Failed to update ramble threshold.", ephemeral=True)
 
 
 def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse) -> discord.Embed:
@@ -174,7 +221,7 @@ def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse) -> discord.Embed:
 
     embed = discord.Embed(
         title="Guild LLM Configuration",
-        description="★ = overridden for this server  |  no mark = using server default",
+        description="* = overridden for this server  |  no mark = using server default",
         color=discord.Color.blurple(),
     )
 
