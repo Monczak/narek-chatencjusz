@@ -28,7 +28,8 @@ WORKDIR /app
 COPY --from=build /app/publish .
 COPY --from=build /app/prompts ./prompts/
 
-ENV Llm_PromptsDir=/app/prompts
+ENV Llm__SystemPromptFile=/app/prompts/system_prompt.txt
+ENV Llm__RambleHintFile=/app/prompts/ramble_hint.txt
 
 EXPOSE 8080
 EXPOSE 5050

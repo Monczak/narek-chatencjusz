@@ -21,15 +21,19 @@ public partial class LlmContextBuilder(
         
         // Step 1: System prompt
         var systemPrompt = ApplyTemplates(settings, sessionState);
+        var customInstructions = settings.CustomInstructions;
         var dynamicBlock = BuildDynamicContextBlock(settings, sessionState);
         
         // Step 2: Measure fixed token costs
         var systemPromptTokens = await tokenCounter.CountTokensAsync(systemPrompt, ct);
+        var customInstructionsTokens = customInstructions != null
+            ? await tokenCounter.CountTokensAsync(customInstructions, ct) : 0;
         var dynamicBlockTokens = await tokenCounter.CountTokensAsync(dynamicBlock, ct);
 
         var availableForHistory = settings.ContextWindow
             - settings.MaxTokens // Reserved for response
             - systemPromptTokens
+            - customInstructionsTokens
             - dynamicBlockTokens
             - ContextWindowSafetyMargin;
         
@@ -52,9 +56,15 @@ public partial class LlmContextBuilder(
         // Step 7: Assemble final context
         var messages = new List<LlmMessage>
         {
-            new("system", systemPrompt),
-            new("system", dynamicBlock)
+            new("system", systemPrompt)
         };
+
+        if (!string.IsNullOrWhiteSpace(customInstructions))
+        {
+            messages.Add(new LlmMessage("system", customInstructions));
+        }
+        
+        messages.Add(new LlmMessage("system", dynamicBlock));
         messages.AddRange(historyMessages);
         messages.AddRange(pendingMessages);
 

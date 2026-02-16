@@ -17,12 +17,13 @@ public class GuildSettingsService
         _collection = db.GetCollection<GuildLlmSettings>("guild_llm_settings");
         
         var promptsDir = config.GetValue<string>("Llm:PromptsDir");
-        var systemPrompt = TryReadPromptFile(promptsDir, "system_prompt.txt", DefaultPrompt);
-        var rambleHint = TryReadPromptFile(promptsDir, "ramble_hint.txt", DefaultRambleHint);
+        var systemPrompt = TryReadPromptFile(config.GetValue<string>("Llm:SystemPromptFile"), DefaultPrompt);
+        var rambleHint = TryReadPromptFile(config.GetValue<string>("Llm:RambleHintFile"), DefaultRambleHint);
 
         var section = config.GetSection("Llm:Defaults");
             _defaults = new ResolvedLlmSettings(
             SystemPrompt:            section["SystemPrompt"] ?? systemPrompt,
+            CustomInstructions:      section["CustomInstructions"],
             BotName:                 section["BotName"] ?? "Narek Narencjusz",
             ProviderType:            section["ProviderType"] != null ? Enum.Parse<LlmProviderType>(section["ProviderType"]!, ignoreCase: true) : LlmProviderType.LlamaCpp,
             ProviderUrl:             section["ProviderUrl"] ?? "http://llm:7070",
@@ -73,9 +74,10 @@ public class GuildSettingsService
 
     private ResolvedLlmSettings Resolve(GuildLlmSettings? g) => new(
         SystemPrompt:            g?.SystemPrompt            ?? _defaults.SystemPrompt,
+        CustomInstructions:      g?.CustomInstructions      ?? _defaults.CustomInstructions,
         BotName:                 g?.BotName                 ?? _defaults.BotName,
         ProviderType:            g?.ProviderType            ?? _defaults.ProviderType,
-        ProviderUrl:                  g?.ProviderUrl                  ?? _defaults.ProviderUrl,
+        ProviderUrl:             g?.ProviderUrl             ?? _defaults.ProviderUrl,
         ModelName:               g?.ModelName               ?? _defaults.ModelName,
         Temperature:             g?.Temperature             ?? _defaults.Temperature,
         MaxTokens:               g?.MaxTokens               ?? _defaults.MaxTokens,
@@ -98,12 +100,11 @@ public class GuildSettingsService
         ));
     }
     
-    private string TryReadPromptFile(string? promptsDir, string fileName, string fallback)
+    private string TryReadPromptFile(string? path, string fallback)
     {
-        if (string.IsNullOrEmpty(promptsDir))
+        if (string.IsNullOrEmpty(path))
             return fallback;
 
-        var path = Path.Combine(promptsDir, fileName);
         if (!File.Exists(path))
         {
             _logger.LogWarning("Prompt file not found at {Path}, using built-in default", path);

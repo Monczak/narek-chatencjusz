@@ -11,6 +11,7 @@ public class GuildLlmSettings
     public ulong GuildId { get; set; }
 
     public string? SystemPrompt { get; set; }
+    public string? CustomInstructions { get; set; }
     public string? BotName { get; set; }
     
     public LlmProviderType? ProviderType { get; set; }
@@ -36,6 +37,7 @@ public class GuildLlmSettings
 
 public record ResolvedLlmSettings(
     string SystemPrompt,
+    string? CustomInstructions,
     string BotName,
     LlmProviderType ProviderType,
     string ProviderUrl,
