@@ -18,29 +18,11 @@ public class GuildSettingsService
         
         var systemPrompt = TryReadPromptFile(config.GetValue<string>("Llm:SystemPromptFile"), DefaultPrompt);
         var rambleHint = TryReadPromptFile(config.GetValue<string>("Llm:RambleHintFile"), DefaultRambleHint);
-
-        var section = config.GetSection("Llm:Defaults");
-        _defaults = new ResolvedLlmSettings(
-            SystemPrompt:            section["SystemPrompt"] ?? systemPrompt,
-            CustomInstructions:      section["CustomInstructions"],
-            BotName:                 section["BotName"] ?? "Narek Narencjusz",
-            ProviderType:            section["ProviderType"] != null
-                                         ? Enum.Parse<LlmProviderType>(section["ProviderType"]!, ignoreCase: true)
-                                         : LlmProviderType.Ollama,
-            ProviderUrl:             section["ProviderUrl"] ?? "http://llm:11434",
-            ModelName:               section["ModelName"],
-            Temperature:             section.GetValue("Temperature", 0.8f),
-            MaxTokens:               section.GetValue("MaxTokens", 1024),
-            ContextWindow:           section.GetValue("ContextWindow", 8192),
-            SilenceThresholdMs:      section.GetValue("SilenceThresholdMs", 1500),
-            UserJoinGraceMs:         section.GetValue("UserJoinGraceMs", 3000),
-            RambleModeEnabled:       section.GetValue("RambleModeEnabled", false),
-            RambleThresholdMs:       section.GetValue("RambleThresholdMs", 90_000),
-            RambleSystemHint:        section["RambleSystemHint"] ?? rambleHint,
-            RambleMinResponseLength: section.GetValue("RambleMinResponseLength", 10),
-            EnabledTools:            null,
-            TimeZone:                section["TimeZone"] ?? "UTC"
-        );
+        
+        _defaults = LlmSettingsMapper.BuildDefaults(
+            config.GetSection("Llm:Defaults"),
+            systemPrompt,
+            rambleHint);
 
         EnsureIndex();
     }
@@ -53,7 +35,11 @@ public class GuildSettingsService
         var @override = await _collection
             .Find(Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId))
             .FirstOrDefaultAsync();
-        var resolved = Resolve(@override);
+
+        // (NEW)
+        var resolved = LlmSettingsMapper.Resolve(@override, _defaults);
+        // ---
+
         _cache[guildId] = resolved;
         return resolved;
     }
@@ -93,26 +79,6 @@ public class GuildSettingsService
 
     public ResolvedLlmSettings GetDefaults() => _defaults;
 
-    private ResolvedLlmSettings Resolve(GuildLlmSettings? g) => new(
-        SystemPrompt:            g?.SystemPrompt            ?? _defaults.SystemPrompt,
-        CustomInstructions:      g?.CustomInstructions      ?? _defaults.CustomInstructions,
-        BotName:                 g?.BotName                 ?? _defaults.BotName,
-        ProviderType:            g?.ProviderType            ?? _defaults.ProviderType,
-        ProviderUrl:             g?.ProviderUrl             ?? _defaults.ProviderUrl,
-        ModelName:               g?.ModelName               ?? _defaults.ModelName,
-        Temperature:             g?.Temperature             ?? _defaults.Temperature,
-        MaxTokens:               g?.MaxTokens               ?? _defaults.MaxTokens,
-        ContextWindow:           g?.ContextWindow           ?? _defaults.ContextWindow,
-        SilenceThresholdMs:      g?.SilenceThresholdMs      ?? _defaults.SilenceThresholdMs,
-        UserJoinGraceMs:         g?.UserJoinGraceMs         ?? _defaults.UserJoinGraceMs,
-        RambleModeEnabled:       g?.RambleModeEnabled       ?? _defaults.RambleModeEnabled,
-        RambleThresholdMs:       g?.RambleThresholdMs       ?? _defaults.RambleThresholdMs,
-        RambleSystemHint:        g?.RambleSystemHint        ?? _defaults.RambleSystemHint,
-        RambleMinResponseLength: g?.RambleMinResponseLength ?? _defaults.RambleMinResponseLength,
-        EnabledTools:            g?.EnabledTools            ?? _defaults.EnabledTools,
-        TimeZone:                g?.TimeZone                ?? _defaults.TimeZone
-    );
-
     private void EnsureIndex()
     {
         _collection.Indexes.CreateOne(
@@ -123,11 +89,11 @@ public class GuildSettingsService
 
     private static string TryReadPromptFile(string? path, string fallback)
     {
-        if (string.IsNullOrEmpty(path)) return fallback;
-        try { return File.ReadAllText(path); }
+        if (string.IsNullOrWhiteSpace(path)) return fallback;
+        try   { return File.ReadAllText(path).Trim(); }
         catch { return fallback; }
     }
-
+    
     private const string DefaultPrompt =
         "You are {{bot_name}}, a companion in the {{guild_name}} Discord server. " +
         "You participate in voice conversations naturally. Keep your responses concise - you're speaking aloud, not writing an essay. " +
