@@ -4,5 +4,5 @@ namespace BrainService.Services.Llm;
 
 public class ToolRegistry(IEnumerable<IToolExecutor> executors)
 {
-    public IReadOnlyList<AIFunction> AIFunctions => executors.Select(e => e.AIFunction).ToList();
+    public IReadOnlyList<AIFunction> AIFunctions { get; } = executors.Select(e => e.AIFunction).ToList();
 }

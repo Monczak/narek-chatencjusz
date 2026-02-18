@@ -10,7 +10,7 @@ public class PlaySoundboardTool(
     AudioGraphFactory audioGraphFactory,
     ToolContextAccessor contextAccessor) : IToolExecutor
 {
-    public AIFunction AIFunction => AIFunctionFactory.Create(
+    public AIFunction AIFunction { get; } = AIFunctionFactory.Create(
         (
             [Description("The exact name of the sound to play, as listed in the available sounds")] string sound_name) =>
         {

@@ -9,7 +9,7 @@ public class EndSessionTool(
     ToolContextAccessor contextAccessor,
     ILogger<EndSessionTool> logger) : IToolExecutor
 {
-    public AIFunction AIFunction => AIFunctionFactory.Create(
+    public AIFunction AIFunction { get; } = AIFunctionFactory.Create(
         async (CancellationToken ct) =>
         {
             var ctx = contextAccessor.Current ?? throw new InvalidOperationException("Tool context not set.");

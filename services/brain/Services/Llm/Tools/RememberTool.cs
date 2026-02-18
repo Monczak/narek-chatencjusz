@@ -6,7 +6,7 @@ namespace BrainService.Services.Llm.Tools;
 
 public class RememberTool(GuildMemoryService memoryService, ToolContextAccessor contextAccessor) : IToolExecutor
 {
-    public AIFunction AIFunction => AIFunctionFactory.Create(
+    public AIFunction AIFunction { get; } = AIFunctionFactory.Create(
         async (
             [Description("The key to store the value under")] string key,
             [Description("The value to store")] string value,

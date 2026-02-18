@@ -54,8 +54,8 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SileroVadModelService>();
 builder.Services.AddSingleton<UdpAudioServer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UdpAudioServer>());
-builder.Services.AddSingleton<SoundboardService>();
 builder.Services.AddSingleton<AudioGraphFactory>();
+builder.Services.AddSingleton<SoundboardService>();
 
 // Session / state
 builder.Services.AddSingleton<BrainConfigService>();
@@ -110,6 +110,11 @@ await vadModelService.EnsureModelAsync();
     var sessionSvc = app.Services.GetRequiredService<VoiceSessionService>();
     orchestrator.SetSessionService(sessionSvc);
     sessionSvc.SetOrchestrator(orchestrator);
+}
+
+{
+    var soundboardSvc = app.Services.GetRequiredService<SoundboardService>();
+    await soundboardSvc.LoadAllAsync();
 }
 
 // Configure the HTTP request pipeline.

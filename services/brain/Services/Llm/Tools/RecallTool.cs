@@ -6,7 +6,7 @@ namespace BrainService.Services.Llm.Tools;
 
 public class RecallTool(GuildMemoryService memoryService, ToolContextAccessor contextAccessor) : IToolExecutor
 {
-    public AIFunction AIFunction => AIFunctionFactory.Create(
+    public AIFunction AIFunction { get; } = AIFunctionFactory.Create(
         async (
             [Description("The key to retrieve")] string key,
             CancellationToken ct) =>
