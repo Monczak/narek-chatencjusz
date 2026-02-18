@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
-using BrainService.Services.Llm;
 using BrainService.Services.Session;
 
 namespace BrainService.Services.Llm;
@@ -22,7 +21,7 @@ public class LlmOrchestrator(
     
     public Task TriggerAsync(string sessionId, ulong guildId, LlmContextReason reason)
     {
-        _ = Task.Run(() => RunOrchestratorAsync(sessionId, guildId, reason));
+        _ = Task.Run(() => RunAsync(sessionId, guildId, reason));
         return Task.CompletedTask;
     }
 
@@ -35,7 +34,7 @@ public class LlmOrchestrator(
         }
     }
     
-    private async Task RunOrchestratorAsync(string sessionId, ulong guildId, LlmContextReason reason)
+    private async Task RunAsync(string sessionId, ulong guildId, LlmContextReason reason)
     {
         if (_sessionService == null)
         {
@@ -43,7 +42,6 @@ public class LlmOrchestrator(
             return;
         }
 
-        // Cancel any existing call for this session
         Cancel(sessionId);
 
         var cts = new CancellationTokenSource();
@@ -56,7 +54,6 @@ public class LlmOrchestrator(
 
         try
         {
-            // Get current session state for context building
             var state = await _sessionService.GetSessionStateAsync(sessionId);
             if (state == null)
             {
@@ -64,19 +61,15 @@ public class LlmOrchestrator(
                 return;
             }
 
-            // Get pending events before the context build so they're included
             var pending = _sessionService.DrainPendingEvents(sessionId);
 
-            // Build context
             var request = await contextBuilder.BuildAsync(state, reason, pending, ct);
             logger.LogInformation("[LLM] Session {SessionId} - context built ({MsgCount} messages)",
                 sessionId, request.Messages.Count);
 
-            // Resolve LLM provider for this guild
             var settings = await settingsService.GetSettingsAsync(guildId);
-            var provider  = providerFactory.GetProvider(settings);
+            var provider = providerFactory.GetProvider(settings);
 
-            // Transition: Thinking → Speaking on first token
             var firstToken = true;
             var sentenceCount = 0;
 
@@ -84,7 +77,6 @@ public class LlmOrchestrator(
             {
                 if (chunk.IsComplete)
                 {
-                    // Final chunk
                     if (!string.IsNullOrEmpty(chunk.TextDelta))
                         accumulated += chunk.TextDelta;
                     break;
@@ -97,48 +89,37 @@ public class LlmOrchestrator(
                 if (firstToken)
                 {
                     firstToken = false;
-                    // Transition state machine Thinking → Speaking
                     await _sessionService.FireConversationTriggerAsync(
                         sessionId, VoiceSessionMachineTrigger.LlmResponseStarted);
 
-                    // Write initial partial BotResponse event
                     eventId = await historyService.AppendBotResponseAsync(
-                        sessionId, accumulated, isPartial: true);
-                }
-                else if (eventId != null && accumulated.Length % 100 == 0)
-                {
-                    // Periodically upsert partial content so dashboard stays live
-                    await historyService.AppendBotResponseAsync(
-                        sessionId, accumulated, isPartial: true, existingEventId: eventId);
-                }
-            }
-
-            ct.ThrowIfCancellationRequested();
-
-            // Finalise BotResponse event
-            sw.Stop();
-            if (!string.IsNullOrEmpty(accumulated))
-            {
-                if (eventId == null)
-                {
-                    // LLM returned synchronously without streaming (rare)
-                    eventId = await historyService.AppendBotResponseAsync(
-                        sessionId, accumulated, isPartial: false,
-                        finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds);
+                        sessionId, accumulated, isPartial: true,
+                        finishReason: LlmFinishReason.Cancelled, generationMs: 0);
                 }
                 else
                 {
-                    await historyService.AppendBotResponseAsync(
-                        sessionId, accumulated, isPartial: false,
-                        finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds,
-                        existingEventId: eventId);
+                    sentenceCount++;
+                    if (sentenceCount % 20 == 0 && eventId != null)
+                    {
+                        await historyService.AppendBotResponseAsync(
+                            sessionId, accumulated, isPartial: true,
+                            finishReason: LlmFinishReason.Cancelled, generationMs: 0,
+                            existingEventId: eventId);
+                    }
                 }
-
-                logger.LogInformation("[LLM] Session {SessionId} - {Chars} chars in {Ms}ms",
-                    sessionId, accumulated.Length, sw.ElapsedMilliseconds);
             }
 
-            // Transition: Speaking → Idle
+            if (!string.IsNullOrWhiteSpace(accumulated))
+            {
+                await historyService.AppendBotResponseAsync(
+                    sessionId, accumulated, isPartial: false,
+                    finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds,
+                    existingEventId: eventId);
+            }
+
+            logger.LogInformation("[LLM] Session {SessionId} - {Chars} chars in {Ms}ms",
+                sessionId, accumulated.Length, sw.ElapsedMilliseconds);
+
             await _sessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmResponseCompleted);
         }

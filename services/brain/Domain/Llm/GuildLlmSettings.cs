@@ -5,7 +5,7 @@ namespace BrainService.Domain.Llm;
 
 public enum LlmProviderType
 {
-    LlamaCpp,
+    Ollama,
     OpenAi
 }
 
@@ -25,7 +25,6 @@ public class GuildLlmSettings
     public LlmProviderType? ProviderType { get; set; }
     public string? ProviderUrl { get; set; }
     public string? ModelName { get; set; }
-    public LlmFamily? Family { get; set; }
     
     public float? Temperature { get; set; }
     public int? MaxTokens { get; set; }
@@ -39,7 +38,7 @@ public class GuildLlmSettings
     public string? RambleSystemHint { get; set; }
     public int? RambleMinResponseLength { get; set; }
     
-    public List<string>? EnabledTools { get; set; } // All tools enabled if null
+    public List<string>? EnabledTools { get; set; }
     
     public string? TimeZone { get; set; }
 }
@@ -51,7 +50,6 @@ public record ResolvedLlmSettings(
     LlmProviderType ProviderType,
     string ProviderUrl,
     string? ModelName,
-    LlmFamily Family,
     float Temperature,
     int MaxTokens,
     int ContextWindow,

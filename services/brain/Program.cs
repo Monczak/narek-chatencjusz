@@ -64,10 +64,15 @@ builder.Services.AddHostedService<StaleConnectionClearer>();
 
 // LLM
 builder.Services.AddSingleton<GuildSettingsService>();
+
+var ollamaUrl = builder.Configuration.GetValue<string>("Llm:Defaults:ProviderUrl") ?? "http://llm:11434";
+builder.Services.AddSingleton(sp => new OllamaModelService(
+    ollamaUrl,
+    sp.GetRequiredService<IHttpClientFactory>(),
+    sp.GetRequiredService<ILogger<OllamaModelService>>()));
+
 builder.Services.AddSingleton<LlmProviderFactory>();
-
 builder.Services.AddSingleton<ITokenCounter, FallbackTokenCounter>();
-
 builder.Services.AddSingleton<LlmContextBuilder>();
 builder.Services.AddSingleton<LlmOrchestrator>();
 

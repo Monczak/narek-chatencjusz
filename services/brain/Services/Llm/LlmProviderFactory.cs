@@ -3,40 +3,17 @@ using BrainService.Domain.Llm;
 
 namespace BrainService.Services.Llm;
 
-public class LlmProviderFactory(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+public class LlmProviderFactory(OllamaModelService modelService, ILoggerFactory loggerFactory)
 {
-    private readonly ConcurrentDictionary<string, ILlmProvider> _providerCache = new();
-    private readonly ConcurrentDictionary<string, ITokenCounter> _counterCache = new();
+    private readonly ConcurrentDictionary<string, ILlmProvider> _cache = new();
 
     public ILlmProvider GetProvider(ResolvedLlmSettings settings)
     {
-        var key = $"{settings.ProviderType}|{settings.ProviderUrl}";
-        return _providerCache.GetOrAdd(key, _ => CreateProvider(settings));
+        // Cache per provider URL. Model name is resolved per-request inside OllamaLlmProvider.
+        var key = settings.ProviderUrl;
+        return _cache.GetOrAdd(key, url => new OllamaLlmProvider(
+            url,
+            settings.ModelName ?? string.Empty,
+            loggerFactory.CreateLogger<OllamaLlmProvider>()));
     }
-    
-    public ITokenCounter GetTokenCounter(ResolvedLlmSettings settings)
-    {
-        var key = $"{settings.ProviderType}|{settings.ProviderUrl}";
-        return _counterCache.GetOrAdd(key, _ => CreateCounter(settings));
-    }
-
-    private ILlmProvider CreateProvider(ResolvedLlmSettings settings) =>
-        settings.ProviderType switch
-        {
-            LlmProviderType.LlamaCpp => new LlamaCppLlmProvider(
-                settings.ProviderUrl,
-                httpClientFactory,
-                loggerFactory.CreateLogger<LlamaCppLlmProvider>()),
-            _ => throw new NotSupportedException($"Unknown LLM provider type: {settings.ProviderType}")
-        };
-
-    private ITokenCounter CreateCounter(ResolvedLlmSettings settings) =>
-        settings.ProviderType switch
-        {
-            LlmProviderType.LlamaCpp => new LlamaCppTokenCounter(
-                settings.ProviderUrl,
-                httpClientFactory,
-                loggerFactory.CreateLogger<LlamaCppTokenCounter>()),
-            _ => new FallbackTokenCounter()
-        };
 }

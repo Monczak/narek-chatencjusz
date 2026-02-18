@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
@@ -8,6 +7,7 @@ namespace BrainService.Services.Llm;
 
 public partial class LlmContextBuilder(
     GuildSettingsService settingsService,
+    OllamaModelService ollamaModelService,
     VoiceSessionHistoryService historyService,
     ITokenCounter tokenCounter,
     ILogger<LlmContextBuilder> logger)
@@ -30,9 +30,12 @@ public partial class LlmContextBuilder(
         var customInstructionsTokens = customInstructions != null
             ? await tokenCounter.CountTokensAsync(customInstructions, ct) : 0;
         var dynamicBlockTokens = await tokenCounter.CountTokensAsync(dynamicBlock, ct);
+        
+        var contextWindow = await ollamaModelService.GetContextWindowAsync(settings.ModelName, ct)
+            ?? settings.ContextWindow;
 
-        var availableForHistory = settings.ContextWindow
-            - settings.MaxTokens // Reserved for response
+        var availableForHistory = contextWindow
+            - settings.MaxTokens
             - systemPromptTokens
             - customInstructionsTokens
             - dynamicBlockTokens
@@ -51,37 +54,36 @@ public partial class LlmContextBuilder(
             .Cast<LlmMessage>()
             .ToList();
         
-        // Step 6: Get trigger hint
+        // Step 6: Build trigger hint
         var triggerHint = BuildTriggerHint(reason, sessionState, settings);
         
-        // Step 7: Assemble final context
+        // Step 7: Assemble final message list
         var messages = new List<LlmMessage>
         {
             new("system", systemPrompt)
         };
 
         if (!string.IsNullOrWhiteSpace(customInstructions))
-        {
             messages.Add(new LlmMessage("system", customInstructions));
-        }
         
         messages.Add(new LlmMessage("system", dynamicBlock));
         messages.AddRange(historyMessages);
         messages.AddRange(pendingMessages);
 
         if (triggerHint != null)
-        {
-            messages.AddRange(new LlmMessage("system", triggerHint));
-        }
+            messages.Add(new LlmMessage("system", triggerHint));
         
         var request = new LlmRequest(
             Messages: messages,
             Settings: new LlmGenerationSettings(
+                ModelName: settings.ModelName,
                 Temperature: settings.Temperature,
-                MaxTokens: settings.MaxTokens,
-                Family: settings.Family
-            ) // TODO: Add more settings once everything's stable
+                MaxTokens: settings.MaxTokens
+            )
         );
+
+        logger.LogDebug("[LLM] Context built: {MsgCount} messages, {Available} tokens available for history",
+            messages.Count, availableForHistory);
 
         return request;
     }
@@ -89,24 +91,24 @@ public partial class LlmContextBuilder(
     private static string ApplyTemplates(ResolvedLlmSettings settings, VoiceSessionState sessionState)
     {
         var timeZone = TimeZoneInfo.Utc;
-        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); } 
+        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); }
         catch { /* fallback to Utc if string is invalid */ }
     
         var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
         
         return SystemPromptTemplateRegex().Replace(settings.SystemPrompt, m => m.Groups[1].Value switch
         {
-            "bot_name"   => settings.BotName,
+            "bot_name" => settings.BotName,
             "guild_name" => sessionState.GuildName,
-            "datetime"   => localTime.ToString("dddd, dd MMMM yyyy, HH:mm UTC"),
-            _            => m.Value
+            "datetime" => localTime.ToString("dddd, dd MMMM yyyy, HH:mm UTC"),
+            _ => m.Value
         });
     }
     
     private static string BuildDynamicContextBlock(ResolvedLlmSettings settings, VoiceSessionState sessionState)
     {
         var timeZone = TimeZoneInfo.Utc;
-        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); } 
+        try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); }
         catch { /* fallback to Utc */ }
         
         var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
@@ -115,12 +117,10 @@ public partial class LlmContextBuilder(
             ? string.Join(", ", sessionState.Users.Select(u => u.DisplayName))
             : "none";
 
-        var duration = DateTime.UtcNow - sessionState.LastUpdated;
-
         return $"""
                 ## Current Context
                 - Time: {localTime:dddd, dd MMMM yyyy, HH:mm} {timeZone.StandardName}
-                                                               - Server: {sessionState.GuildName}{(sessionState.ChannelName != null ? $" (channel name: {sessionState.ChannelName})" : "")}
+                - Server: {sessionState.GuildName}{(sessionState.ChannelName != null ? $" (channel: {sessionState.ChannelName})" : "")}
                 - Users currently in channel: {users}
                 """;
     }
@@ -131,7 +131,6 @@ public partial class LlmContextBuilder(
         int budget,
         CancellationToken ct)
     {
-        // Work backwards from newest, adding until we exceed budget
         var result = new LinkedList<LlmMessage>();
         var used = 0;
 
@@ -178,19 +177,6 @@ public partial class LlmContextBuilder(
             _ => null
         };
 
-    private static string? BuildTriggerHint(LlmContextReason reason, VoiceSessionState sessionState, ResolvedLlmSettings settings)
-    {
-        return reason switch
-        {
-            LlmContextReason.UserSilence => null, // No hint needed - normal flow
-            LlmContextReason.Ramble      => settings.RambleSystemHint,
-            LlmContextReason.UserJoined  => "[A user just joined the channel. Greet them if appropriate.]",
-            LlmContextReason.UserLeft    => "[A user just left the channel. Say goodbye to them if appropriate.]",
-            _ => null
-        };
-    }
-
-
     private static string GetDisplayName(VoiceSessionEventDocument evt, VoiceSessionState sessionState)
     {
         if (evt.UserId.HasValue)
@@ -201,10 +187,20 @@ public partial class LlmContextBuilder(
 
         return evt.UserId.HasValue ? $"User {evt.UserId}" : "Unknown User";
     }
-    
+
+    private static string? BuildTriggerHint(LlmContextReason reason, VoiceSessionState sessionState, ResolvedLlmSettings settings) =>
+        reason switch
+        {
+            LlmContextReason.UserSilence => null, // No hint needed - normal flow
+            LlmContextReason.Ramble => $"[HINT] {settings.RambleSystemHint}",
+            LlmContextReason.UserJoined => "[HINT] A user just joined the channel. You may greet them if appropriate.",
+            LlmContextReason.UserLeft => "[HINT] A user just left the channel. You may acknowledge this if appropriate.",
+            _ => null
+        };
+
     private const int ContextWindowSafetyMargin = 64;
     private const int LlmContextEventLimit = 500;
-
+    
     [GeneratedRegex(@"\{\{(\w+)\}\}")]
     private static partial Regex SystemPromptTemplateRegex();
 }

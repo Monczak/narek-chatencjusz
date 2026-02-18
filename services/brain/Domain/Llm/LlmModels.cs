@@ -5,11 +5,11 @@ public record LlmMessage(string Role, string Content);
 public record LlmToolDefinition(string Name, string Description, object JsonSchema);
 
 public record LlmGenerationSettings(
+    string? ModelName = null,
     float Temperature = 1.0f,
     int MaxTokens = 1024,
     float? TopP = null,
-    float? RepetitionPenalty = null,
-    LlmFamily Family = LlmFamily.Llama
+    float? RepetitionPenalty = null
 );
 
 public record LlmRequest(
@@ -42,11 +42,4 @@ public enum LlmContextReason
     Ramble,
     UserJoined,
     UserLeft,
-}
-
-public enum LlmFamily
-{
-    Llama,
-    Gemma,
-    Mistral,
 }

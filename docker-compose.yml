@@ -26,7 +26,7 @@ services:
       - Asr__Url=asr:6060
       - Llm__SystemPromptFile=/app/prompts/system_prompt.txt
       - Llm__RambleHintFile=/app/prompts/ramble_hint.txt
-      - Llm__Defaults__ProviderUrl=http://llm:7070
+      - Llm__Defaults__ProviderUrl=http://llm:11434
     ports:
      - "8080:8080"
     restart: unless-stopped
@@ -65,21 +65,21 @@ services:
       - asr_model_cache:/root/.cache/huggingface
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    command: >
-      -m /models/model.gguf
-      --port 7070
-      --host 0.0.0.0
-      -ngl 99
-      --ctx-size 8192
-      --parallel 1
+    build:
+      context: .
+      dockerfile: services/llm/Dockerfile
     ports:
-      - "7070:7070"
+      - "11434:11434"
     restart: unless-stopped
     networks:
       - internal
     volumes:
-      - ./models/model.gguf:/models/model.gguf
+      - ollama_data:/root/.ollama
+      - ./services/llm/Modelfile:/modelfiles/Modelfile:ro
+    environment:
+      - OLLAMA_MODEL_NAME=pearlsac
+      - OLLAMA_MODELFILE_PATH=/modelfiles/Modelfile
+      - OLLAMA_KEEP_ALIVE=-1
     deploy:
       resources:
         reservations:
@@ -113,3 +113,4 @@ volumes:
   asr_model_cache:
   mongo_data:
   brain_models:
+  ollama_data:

@@ -2,6 +2,7 @@
 @using BrainService.Domain.Llm
 @using BrainService.Services.Llm
 @inject GuildSettingsService SettingsService
+@inject OllamaModelService OllamaModelService
 @inject VoiceSessionHistoryService HistoryService
 @inject ISnackbar Snackbar
 
@@ -83,6 +84,44 @@
                                 <MudTextField @bind-Value="_edit.CustomInstructions"
                                               Variant="Variant.Outlined" Lines="3"
                                               Placeholder="Additional instructions appended after the system prompt..." />
+                            </OverrideField>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Model -->
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent><MudText Typo="Typo.h6">Model</MudText></CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <OverrideField Label="Ollama Model"
+                                          IsOverridden="@(_edit.ModelName != null)"
+                                          IsOverriddenChanged="v => { if (!v) _edit.ModelName = null; else _edit.ModelName = _defaults.ModelName ?? string.Empty; }"
+                                          DefaultHint="@(_defaults.ModelName ?? "None configured")">
+                                @if (_availableModels.Count > 0)
+                                {
+                                    <MudSelect @bind-Value="_edit.ModelName"
+                                               Variant="Variant.Outlined" Dense="true"
+                                               Placeholder="@(_defaults.ModelName ?? "Select model...")">
+                                        @foreach (var model in _availableModels)
+                                        {
+                                            <MudSelectItem Value="@model">@model</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                }
+                                else
+                                {
+                                    <MudTextField @bind-Value="_edit.ModelName"
+                                                  Variant="Variant.Outlined" Dense="true"
+                                                  Placeholder="e.g. mistral:7b (no models found in Ollama)"
+                                                  HelperText="Ollama returned no models. Enter a name manually or pull a model first." />
+                                }
                             </OverrideField>
                         </MudItem>
                     </MudGrid>
@@ -219,6 +258,7 @@
 
 @code {
     private List<(long GuildId, string GuildName)> _knownGuilds = [];
+    private List<string> _availableModels = [];
 
     private ulong? _selectedGuildId;
 
@@ -237,6 +277,16 @@
     {
         _knownGuilds = await HistoryService.GetKnownGuildsAsync();
         _defaults = SettingsService.GetDefaults();
+
+        try
+        {
+            var models = await OllamaModelService.GetAvailableModelsAsync();
+            _availableModels = models.ToList();
+        }
+        catch
+        {
+            // Ollama might not be reachable at dashboard load time - that's fine
+        }
     }
 
     private async Task OnGuildSelected(ulong? guildId)
@@ -258,7 +308,6 @@
         {
             _selectedGuildId = guildId;
             var raw = await SettingsService.GetRawSettingsAsync(guildId);
-            // Edit a copy so we can cancel without side effects
             _edit = raw is null
                 ? new GuildLlmSettings { GuildId = guildId }
                 : CloneSettings(raw);
@@ -312,24 +361,21 @@
 
     private static GuildLlmSettings CloneSettings(GuildLlmSettings s) => new()
     {
-        Id                      = s.Id,
-        GuildId                 = s.GuildId,
-        SystemPrompt            = s.SystemPrompt,
-        CustomInstructions      = s.CustomInstructions,
-        BotName                 = s.BotName,
-        ProviderType            = s.ProviderType,
-        ProviderUrl             = s.ProviderUrl,
-        ModelName               = s.ModelName,
-        Temperature             = s.Temperature,
-        MaxTokens               = s.MaxTokens,
-        ContextWindow           = s.ContextWindow,
-        SilenceThresholdMs      = s.SilenceThresholdMs,
-        UserJoinGraceMs         = s.UserJoinGraceMs,
-        RambleModeEnabled       = s.RambleModeEnabled,
-        RambleThresholdMs       = s.RambleThresholdMs,
-        RambleSystemHint        = s.RambleSystemHint,
+        GuildId              = s.GuildId,
+        SystemPrompt         = s.SystemPrompt,
+        CustomInstructions   = s.CustomInstructions,
+        BotName              = s.BotName,
+        ModelName            = s.ModelName,
+        Temperature          = s.Temperature,
+        MaxTokens            = s.MaxTokens,
+        ContextWindow        = s.ContextWindow,
+        SilenceThresholdMs   = s.SilenceThresholdMs,
+        UserJoinGraceMs      = s.UserJoinGraceMs,
+        RambleModeEnabled    = s.RambleModeEnabled,
+        RambleThresholdMs    = s.RambleThresholdMs,
+        RambleSystemHint     = s.RambleSystemHint,
         RambleMinResponseLength = s.RambleMinResponseLength,
-        EnabledTools            = s.EnabledTools is null ? null : [..s.EnabledTools],
-        TimeZone                = s.TimeZone,
+        EnabledTools         = s.EnabledTools,
+        TimeZone             = s.TimeZone,
     };
 }

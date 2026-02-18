@@ -14,6 +14,7 @@ public class BrainGrpcService(
     VoiceSessionService voiceSessionService,
     AudioGraphFactory audioGraphFactory,
     GuildSettingsService guildSettingsService,
+    OllamaModelService ollamaModelService,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -251,6 +252,15 @@ public class BrainGrpcService(
         return new UpdateGuildSettingsResponse { Success = true, Message = "Settings updated." };
     }
     
+    public override async Task<GetAvailableModelsResponse> GetAvailableModels(
+        GetAvailableModelsRequest request, ServerCallContext context)
+    {
+        var models = await ollamaModelService.GetAvailableModelsAsync(context.CancellationToken);
+        var response = new GetAvailableModelsResponse();
+        response.ModelNames.AddRange(models);
+        return response;
+    }
+    
     private static GuildLlmConfig ToProto(ResolvedLlmSettings s) => new()
     {
         SystemPrompt       = s.SystemPrompt,
@@ -261,9 +271,9 @@ public class BrainGrpcService(
         RambleModeEnabled  = s.RambleModeEnabled,
         RambleThresholdMs  = s.RambleThresholdMs,
         TimeZone           = s.TimeZone,
-        // Nullable fields - only set if present
         CustomInstructions = s.CustomInstructions ?? "",
         RambleSystemHint   = s.RambleSystemHint,
+        ModelName          = s.ModelName ?? "",
     };
     
     private static GuildLlmConfig ToRawProto(GuildLlmSettings s)
@@ -279,6 +289,7 @@ public class BrainGrpcService(
         if (s.RambleThresholdMs  != null) cfg.RambleThresholdMs  = s.RambleThresholdMs.Value;
         if (s.RambleSystemHint   != null) cfg.RambleSystemHint   = s.RambleSystemHint;
         if (s.TimeZone           != null) cfg.TimeZone           = s.TimeZone;
+        if (s.ModelName          != null) cfg.ModelName          = s.ModelName;
         return cfg;
     }
 }

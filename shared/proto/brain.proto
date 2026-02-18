@@ -19,6 +19,7 @@ service Brain {
   // Per-guild LLM configuration
   rpc GetGuildSettings (GetGuildSettingsRequest) returns (GetGuildSettingsResponse);
   rpc UpdateGuildSettings (UpdateGuildSettingsRequest) returns (UpdateGuildSettingsResponse);
+  rpc GetAvailableModels (GetAvailableModelsRequest) returns (GetAvailableModelsResponse);
 }
 
 message GuildContext {
@@ -187,6 +188,7 @@ message GuildLlmConfig {
   optional int32 ramble_threshold_ms = 8;
   optional string ramble_system_hint = 9;
   optional string time_zone = 10;
+  optional string model_name = 11;
 }
 
 message GetGuildSettingsRequest {
@@ -208,3 +210,10 @@ message UpdateGuildSettingsResponse {
   bool success = 1;
   string message = 2;
 }
+
+message GetAvailableModelsRequest {}
+
+message GetAvailableModelsResponse {
+  repeated string model_names = 1;
+}
+

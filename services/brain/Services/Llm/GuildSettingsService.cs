@@ -24,10 +24,11 @@ public class GuildSettingsService
             SystemPrompt:            section["SystemPrompt"] ?? systemPrompt,
             CustomInstructions:      section["CustomInstructions"],
             BotName:                 section["BotName"] ?? "Narek Narencjusz",
-            ProviderType:            section["ProviderType"] != null ? Enum.Parse<LlmProviderType>(section["ProviderType"]!, ignoreCase: true) : LlmProviderType.LlamaCpp,
-            ProviderUrl:             section["ProviderUrl"] ?? "http://llm:7070",
+            ProviderType:            section["ProviderType"] != null
+                                         ? Enum.Parse<LlmProviderType>(section["ProviderType"]!, ignoreCase: true)
+                                         : LlmProviderType.Ollama,
+            ProviderUrl:             section["ProviderUrl"] ?? "http://llm:11434",
             ModelName:               section["ModelName"],
-            Family:                  section["Family"] != null ? Enum.Parse<LlmFamily>(section["Family"]!, ignoreCase: true) : LlmFamily.Llama,
             Temperature:             section.GetValue("Temperature", 0.8f),
             MaxTokens:               section.GetValue("MaxTokens", 1024),
             ContextWindow:           section.GetValue("ContextWindow", 8192),
@@ -47,9 +48,7 @@ public class GuildSettingsService
     public async Task<ResolvedLlmSettings> GetSettingsAsync(ulong guildId)
     {
         if (_cache.TryGetValue(guildId, out var settings))
-        {
             return settings;
-        }
 
         var @override = await _collection
             .Find(Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId))
@@ -101,7 +100,6 @@ public class GuildSettingsService
         ProviderType:            g?.ProviderType            ?? _defaults.ProviderType,
         ProviderUrl:             g?.ProviderUrl             ?? _defaults.ProviderUrl,
         ModelName:               g?.ModelName               ?? _defaults.ModelName,
-        Family:                  g?.Family                  ?? _defaults.Family,
         Temperature:             g?.Temperature             ?? _defaults.Temperature,
         MaxTokens:               g?.MaxTokens               ?? _defaults.MaxTokens,
         ContextWindow:           g?.ContextWindow           ?? _defaults.ContextWindow,
@@ -117,34 +115,17 @@ public class GuildSettingsService
 
     private void EnsureIndex()
     {
-        _collection.Indexes.CreateOne(new CreateIndexModel<GuildLlmSettings>(
-            Builders<GuildLlmSettings>.IndexKeys.Ascending(g => g.GuildId),
-            new CreateIndexOptions { Unique = true, Background = true }
-        ));
+        _collection.Indexes.CreateOne(
+            new CreateIndexModel<GuildLlmSettings>(
+                Builders<GuildLlmSettings>.IndexKeys.Ascending(s => s.GuildId),
+                new CreateIndexOptions { Unique = true }));
     }
-    
-    private string TryReadPromptFile(string? path, string fallback)
+
+    private static string TryReadPromptFile(string? path, string fallback)
     {
-        if (string.IsNullOrEmpty(path))
-            return fallback;
-
-        if (!File.Exists(path))
-        {
-            _logger.LogWarning("Prompt file not found at {Path}, using built-in default", path);
-            return fallback;
-        }
-
-        try
-        {
-            var content = File.ReadAllText(path).Trim();
-            _logger.LogInformation("Loaded prompt from {Path}", path);
-            return string.IsNullOrWhiteSpace(content) ? fallback : content;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to read prompt file {Path}, using built-in default", path);
-            return fallback;
-        }
+        if (string.IsNullOrEmpty(path)) return fallback;
+        try { return File.ReadAllText(path); }
+        catch { return fallback; }
     }
 
     private const string DefaultPrompt =

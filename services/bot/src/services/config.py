@@ -10,6 +10,11 @@ class ConfigService:
         req = brain_pb2.GetGuildSettingsRequest(guild_id=guild_id)
         return await self.brain.GetGuildSettings(req)  # type: ignore
 
+    async def list_models(self) -> list[str]:
+        req = brain_pb2.GetAvailableModelsRequest()
+        resp = await self.brain.GetAvailableModels(req)  # type: ignore
+        return list(resp.model_names)
+
     async def set_system_prompt(self, guild_id: int, text: str) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._patch(guild_id, system_prompt=text)
 
@@ -36,6 +41,12 @@ class ConfigService:
 
     async def set_ramble_threshold(self, guild_id: int, seconds: int) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._patch(guild_id, ramble_threshold_ms=seconds * 1000)
+
+    async def set_model(self, guild_id: int, model_name: str) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, model_name=model_name)
+
+    async def clear_model(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._clear(guild_id, "model_name")
 
     async def _patch(self, guild_id: int, **kwargs) -> brain_pb2.UpdateGuildSettingsResponse:
         patch = brain_pb2.GuildLlmConfig(**kwargs)
