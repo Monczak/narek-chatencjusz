@@ -81,10 +81,7 @@ public class LlmOrchestrator(
 
             var firstToken = true;
             var sentenceCount = 0;
-
-            // The tool call loop is gone: UseFunctionInvocation() middleware handles
-            // all tool rounds internally. We just stream once and accumulate text.
-            // FunctionCallContent chunks are still streamed through for observation.
+            
             await foreach (var chunk in provider.StreamCompletionAsync(request, ct))
             {
                 if (chunk.IsComplete)

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using BrainService.Proto.Brain;
 using Microsoft.Extensions.AI;
 
@@ -10,9 +11,13 @@ public class EndSessionTool(
     ILogger<EndSessionTool> logger) : IToolExecutor
 {
     public AIFunction AIFunction { get; } = AIFunctionFactory.Create(
-        async (CancellationToken ct) =>
+        async (
+            [Description("The reason for ending the session (e.g. 'User request', 'Conversation over')")] string reason, 
+            CancellationToken ct) =>
         {
             var ctx = contextAccessor.Current ?? throw new InvalidOperationException("Tool context not set.");
+
+            logger.LogInformation("EndSessionTool: ending session {SessionId}. Reason: {Reason}", ctx.SessionId, reason);
 
             var nodeId = await nodeRegistry.GetNodeForGuildAsync(ctx.GuildId);
             if (string.IsNullOrEmpty(nodeId))
@@ -30,8 +35,7 @@ public class EndSessionTool(
                 }
             });
 
-            logger.LogInformation("EndSessionTool: disconnect command sent for session {SessionId}", ctx.SessionId);
-            return "Session ended.";
+            return $"Session ended. Reason: {reason}";
         },
         name: "end_session",
         description: "End the current voice session and disconnect from the voice channel.");

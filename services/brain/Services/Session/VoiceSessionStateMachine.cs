@@ -68,6 +68,7 @@ public class VoiceSessionStateMachine
             .SubstateOf(VoiceSessionMachineState.Active)
             .Permit(VoiceSessionMachineTrigger.LlmResponseStarted, VoiceSessionMachineState.Speaking)
             .Permit(VoiceSessionMachineTrigger.LlmCanceled, VoiceSessionMachineState.Idle)
+            .Permit(VoiceSessionMachineTrigger.LlmResponseCompleted, VoiceSessionMachineState.Idle)
             .Permit(VoiceSessionMachineTrigger.UserSpeechStarted, VoiceSessionMachineState.Listening);
 
         _stateMachine.Configure(VoiceSessionMachineState.Speaking)

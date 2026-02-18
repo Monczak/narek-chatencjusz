@@ -25,19 +25,21 @@ public class GuildMemoryService
 
     public async Task SetAsync(ulong guildId, string key, string value, CancellationToken ct = default)
     {
-        await _collection.ReplaceOneAsync(
-            Builders<GuildMemoryDocument>.Filter.And(
-                Builders<GuildMemoryDocument>.Filter.Eq(d => d.GuildId, guildId),
-                Builders<GuildMemoryDocument>.Filter.Eq(d => d.Key, key)
-            ),
-            new GuildMemoryDocument
-            {
-                GuildId = guildId,
-                Key = key,
-                Value = value,
-                UpdatedAt = DateTime.UtcNow,
-            },
-            new ReplaceOptions { IsUpsert = true },
+        var filter = Builders<GuildMemoryDocument>.Filter.And(
+            Builders<GuildMemoryDocument>.Filter.Eq(d => d.GuildId, guildId),
+            Builders<GuildMemoryDocument>.Filter.Eq(d => d.Key, key)
+        );
+        
+        var update = Builders<GuildMemoryDocument>.Update
+            .Set(d => d.Value, value)
+            .Set(d => d.UpdatedAt, DateTime.UtcNow)
+            .SetOnInsert(d => d.GuildId, guildId)
+            .SetOnInsert(d => d.Key, key);
+
+        await _collection.UpdateOneAsync(
+            filter,
+            update,
+            new UpdateOptions { IsUpsert = true },
             ct
         );
 

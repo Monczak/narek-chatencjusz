@@ -14,8 +14,8 @@ public class VoiceSessionHistoryService
     private readonly IMongoCollection<VoiceSessionEventDocument> _eventCollection;
     private readonly ILogger<VoiceSessionHistoryService> _logger;
     private readonly IHubContext<DashboardHub> _hubContext;
-    
-    public static readonly HashSet<VoiceSessionEventType> LlmContextTypes =
+
+    private static readonly HashSet<VoiceSessionEventType> LlmContextTypes =
     [
         VoiceSessionEventType.Transcript,
         VoiceSessionEventType.BotResponse,
@@ -163,7 +163,7 @@ public class VoiceSessionHistoryService
         };
         
         if (toolCalls is { Count: > 0 })
-            data["tool_calls"] = new BsonArray(toolCalls.Select(BsonValue.Create));
+            data["tool_calls"] = new BsonArray(toolCalls.Select(x => x.ToBsonDocument()));
 
         if (existingEventId != null)
         {
