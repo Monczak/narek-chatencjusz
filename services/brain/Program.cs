@@ -3,11 +3,14 @@ using BrainService.Domain.Llm;
 using BrainService.Hubs;
 using BrainService.Services;
 using BrainService.Services.Asr;
+using BrainService.Services.Audio;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Llm;
+using BrainService.Services.Llm.Tools;
+using BrainService.Services.Memory;
 using BrainService.Services.Session;
 using Microsoft.Extensions.Logging.Console;
 using MongoDB.Driver;
@@ -51,6 +54,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SileroVadModelService>();
 builder.Services.AddSingleton<UdpAudioServer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UdpAudioServer>());
+builder.Services.AddSingleton<SoundboardService>();
 builder.Services.AddSingleton<AudioGraphFactory>();
 
 // Session / state
@@ -73,6 +77,16 @@ builder.Services.AddSingleton(sp => new OllamaModelService(
 
 builder.Services.AddSingleton<LlmProviderFactory>();
 builder.Services.AddSingleton<ITokenCounter, FallbackTokenCounter>();
+
+builder.Services.AddSingleton<GuildMemoryService>();
+builder.Services.AddSingleton<ToolContextAccessor>();
+builder.Services.AddSingleton<IToolExecutor, RememberTool>();
+builder.Services.AddSingleton<IToolExecutor, RecallTool>();
+builder.Services.AddSingleton<IToolExecutor, PlaySoundboardTool>();
+builder.Services.AddSingleton<IToolExecutor, EndSessionTool>();
+builder.Services.AddSingleton<ToolRegistry>(sp =>
+    new ToolRegistry(sp.GetServices<IToolExecutor>()));
+
 builder.Services.AddSingleton<LlmContextBuilder>();
 builder.Services.AddSingleton<LlmOrchestrator>();
 

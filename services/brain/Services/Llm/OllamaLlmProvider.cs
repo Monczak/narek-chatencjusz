@@ -27,7 +27,10 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
         CancellationToken ct)
     {
         var modelName = request.Settings.ModelName ?? defaultModel;
-        IChatClient client = new OllamaApiClient(ollamaUrl, modelName);
+        
+        var client = new ChatClientBuilder(new OllamaApiClient(ollamaUrl, modelName))
+            .UseFunctionInvocation()
+            .Build();
 
         var messages = request.Messages.Select(ToMeaiMessage).ToList();
 
@@ -38,13 +41,15 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
             TopP = request.Settings.TopP,
         };
 
-        // TODO Phase 6: populate options.Tools from request.Tools using IToolExecutor definitions
+        if (request.Tools is { Count: > 0 })
+            options.Tools = [.. request.Tools];
 
         try
         {
             await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct))
             {
-                // Check for a native tool call returned by Ollama
+                // FunctionCallContent: the middleware has already invoked the tool,
+                // but we yield the chunk so the orchestrator can log it for history.
                 var funcCall = update.Contents?.OfType<FunctionCallContent>().FirstOrDefault();
                 if (funcCall != null)
                 {
@@ -58,6 +63,10 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
                         null), ct);
                     continue;
                 }
+
+                // FunctionResultContent: skip - orchestrator doesn't need these.
+                if (update.Contents?.OfType<FunctionResultContent>().Any() == true)
+                    continue;
 
                 if (update.FinishReason != null)
                 {

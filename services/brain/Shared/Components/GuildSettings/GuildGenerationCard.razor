@@ -25,7 +25,7 @@
                                IsOverriddenChanged="v => { Edit.MaxTokens = !v ? null : Defaults.MaxTokens; }"
                                DefaultHint="@Defaults.MaxTokens.ToString()">
                     <MudNumericField @bind-Value="Edit.MaxTokens"
-                                     Variant="Variant.Outlined" Dense="true"
+                                     Variant="Variant.Outlined"
                                      Min="64" Max="8192" />
                 </OverrideField>
             </MudItem>

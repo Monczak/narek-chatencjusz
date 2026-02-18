@@ -1,8 +1,8 @@
+using Microsoft.Extensions.AI;
+
 namespace BrainService.Domain.Llm;
 
 public record LlmMessage(string Role, string Content);
-
-public record LlmToolDefinition(string Name, string Description, object JsonSchema);
 
 public record LlmGenerationSettings(
     string? ModelName = null,
@@ -15,7 +15,7 @@ public record LlmGenerationSettings(
 public record LlmRequest(
     IReadOnlyList<LlmMessage> Messages,
     LlmGenerationSettings Settings,
-    IReadOnlyList<LlmToolDefinition>? Tools = null
+    IReadOnlyList<AITool>? Tools = null
 );
 
 public record LlmToolCall(string Id, string Name, string ArgumentsJson);

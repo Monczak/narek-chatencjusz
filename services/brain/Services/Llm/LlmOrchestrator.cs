@@ -11,6 +11,7 @@ public class LlmOrchestrator(
     GuildSettingsService settingsService,
     LlmProviderFactory providerFactory,
     VoiceSessionHistoryService historyService,
+    ToolContextAccessor toolContextAccessor,
     ILogger<LlmOrchestrator> logger) : ILlmOrchestrationTrigger
 {
     private VoiceSessionService? _sessionService;
@@ -51,6 +52,7 @@ public class LlmOrchestrator(
         var sw = Stopwatch.StartNew();
         string? eventId = null;
         var accumulated = string.Empty;
+        var observedToolCalls = new List<LlmToolCall>();
 
         try
         {
@@ -69,10 +71,20 @@ public class LlmOrchestrator(
 
             var settings = await settingsService.GetSettingsAsync(guildId);
             var provider = providerFactory.GetProvider(settings);
+            
+            toolContextAccessor.Current = new ToolExecutionContext
+            {
+                SessionId = sessionId,
+                GuildId = guildId,
+                SessionState = state,
+            };
 
             var firstToken = true;
             var sentenceCount = 0;
 
+            // The tool call loop is gone: UseFunctionInvocation() middleware handles
+            // all tool rounds internally. We just stream once and accumulate text.
+            // FunctionCallContent chunks are still streamed through for observation.
             await foreach (var chunk in provider.StreamCompletionAsync(request, ct))
             {
                 if (chunk.IsComplete)
@@ -80,6 +92,15 @@ public class LlmOrchestrator(
                     if (!string.IsNullOrEmpty(chunk.TextDelta))
                         accumulated += chunk.TextDelta;
                     break;
+                }
+
+                // Tool call observed (already executed by middleware) - collect for history.
+                if (chunk.ToolCall != null)
+                {
+                    observedToolCalls.Add(chunk.ToolCall);
+                    logger.LogInformation("[LLM] Session {SessionId} - tool '{Name}' called",
+                        sessionId, chunk.ToolCall.Name);
+                    continue;
                 }
 
                 if (chunk.TextDelta == null) continue;
@@ -111,14 +132,25 @@ public class LlmOrchestrator(
 
             if (!string.IsNullOrWhiteSpace(accumulated))
             {
+                IReadOnlyList<object>? storedToolCalls = observedToolCalls.Count > 0
+                    ? observedToolCalls.Select(tc => (object)new
+                    {
+                        id = tc.Id,
+                        name = tc.Name,
+                        arguments = tc.ArgumentsJson,
+                    }).ToList()
+                    : null;
+
                 await historyService.AppendBotResponseAsync(
                     sessionId, accumulated, isPartial: false,
-                    finishReason: LlmFinishReason.Stop, generationMs: (int)sw.ElapsedMilliseconds,
+                    finishReason: LlmFinishReason.Stop,
+                    generationMs: (int)sw.ElapsedMilliseconds,
+                    toolCalls: storedToolCalls,
                     existingEventId: eventId);
             }
 
-            logger.LogInformation("[LLM] Session {SessionId} - {Chars} chars in {Ms}ms",
-                sessionId, accumulated.Length, sw.ElapsedMilliseconds);
+            logger.LogInformation("[LLM] Session {SessionId} - {Chars} chars in {Ms}ms ({Tools} tool call(s))",
+                sessionId, accumulated.Length, sw.ElapsedMilliseconds, observedToolCalls.Count);
 
             await _sessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmResponseCompleted);
@@ -143,6 +175,8 @@ public class LlmOrchestrator(
         }
         finally
         {
+            toolContextAccessor.Current = null;
+
             if (_activeCts.TryRemove(sessionId, out var removed))
                 removed.Dispose();
         }

@@ -13,7 +13,7 @@
                                IsOverriddenChanged="v => { Edit.SilenceThresholdMs = !v ? null : Defaults.SilenceThresholdMs; }"
                                DefaultHint="@Defaults.SilenceThresholdMs.ToString()">
                     <MudNumericField @bind-Value="Edit.SilenceThresholdMs"
-                                     Variant="Variant.Outlined" Dense="true"
+                                     Variant="Variant.Outlined"
                                      Min="300" Max="10000" />
                 </OverrideField>
             </MudItem>
@@ -23,7 +23,7 @@
                                IsOverriddenChanged="v => { Edit.TimeZone = !v ? null : Defaults.TimeZone; }"
                                DefaultHint="@Defaults.TimeZone">
                     <MudTextField @bind-Value="Edit.TimeZone"
-                                  Variant="Variant.Outlined" Dense="true"
+                                  Variant="Variant.Outlined"
                                   Placeholder="e.g. Europe/London, America/New_York" />
                 </OverrideField>
             </MudItem>

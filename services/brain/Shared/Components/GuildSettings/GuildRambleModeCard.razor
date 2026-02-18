@@ -24,7 +24,7 @@
                                IsOverriddenChanged="v => { Edit.RambleThresholdMs = !v ? null : Defaults.RambleThresholdMs; }"
                                DefaultHint="@Defaults.RambleThresholdMs.ToString()">
                     <MudNumericField @bind-Value="Edit.RambleThresholdMs"
-                                     Variant="Variant.Outlined" Dense="true"
+                                     Variant="Variant.Outlined"
                                      Min="10000" Max="600000" />
                 </OverrideField>
             </MudItem>

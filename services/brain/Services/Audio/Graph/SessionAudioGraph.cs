@@ -31,6 +31,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     
     private readonly IHubContext<DashboardHub> _hubContext;
 
+    public SoundboardNode Soundboard { get; } = new();
+    
     private readonly MixerNode _mixer;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentBag<Task> _tasks = [];
@@ -69,6 +71,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         _hubContext = hubContext;
 
         _mixer = new MixerNode(loggerFactory.CreateLogger<MixerNode>());
+        
+        _mixer.AddInput("bot_soundboard", Soundboard.Output);
 
         _graphCt = _cts.Token;
     }

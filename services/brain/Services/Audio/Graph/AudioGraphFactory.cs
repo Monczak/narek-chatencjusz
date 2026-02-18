@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using BrainService.Hubs;
 using BrainService.Services.Asr;
+using BrainService.Services.Audio.Nodes;
 using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
@@ -16,6 +17,7 @@ public sealed class AudioGraphFactory(
     SileroVadModelService vadModelService,
     AsrGrpcClient asrClient,
     VoiceSessionHistoryService historyService,
+    SoundboardService soundboardService,
     ILoggerFactory loggerFactory,
     IHubContext<DashboardHub> hubContext) : IAsyncDisposable
 {
@@ -85,11 +87,14 @@ public sealed class AudioGraphFactory(
         entry.Cts.Dispose();
         _logger.LogInformation("Stopped audio graph for session {SessionId}", sessionId);
     }
+    
+    public SoundboardNode? TryGetSoundboard(string sessionId) =>
+        _active.TryGetValue(sessionId, out var entry) ? entry.Graph.Soundboard : null;
 
     public async ValueTask DisposeAsync()
     {
         _logger.LogInformation("Disposing all audio graphs ({Count} active)", _active.Count);
-        var stops = _active.Keys.ToList().Select(id => StopSessionAsync(id));
+        var stops = _active.Keys.ToList().Select(StopSessionAsync);
         await Task.WhenAll(stops);
     }
 }

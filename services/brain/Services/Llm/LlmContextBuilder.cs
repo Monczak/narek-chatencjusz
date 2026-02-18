@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
+using BrainService.Services.Audio;
+using BrainService.Services.Memory;
 using BrainService.Services.Session;
 
 namespace BrainService.Services.Llm;
@@ -10,6 +12,9 @@ public partial class LlmContextBuilder(
     OllamaModelService ollamaModelService,
     VoiceSessionHistoryService historyService,
     ITokenCounter tokenCounter,
+    GuildMemoryService memoryService,
+    SoundboardService soundboardService,
+    ToolRegistry toolRegistry,
     ILogger<LlmContextBuilder> logger)
 {
     public async Task<LlmRequest> BuildAsync(
@@ -23,7 +28,9 @@ public partial class LlmContextBuilder(
         // Step 1: System prompt
         var systemPrompt = ApplyTemplates(settings, sessionState);
         var customInstructions = settings.CustomInstructions;
-        var dynamicBlock = BuildDynamicContextBlock(settings, sessionState);
+        
+        var memories = await memoryService.GetAllAsync(sessionState.GuildId, ct);
+        var dynamicBlock = BuildDynamicContextBlock(settings, sessionState, memories);
         
         // Step 2: Measure fixed token costs
         var systemPromptTokens = await tokenCounter.CountTokensAsync(systemPrompt, ct);
@@ -79,7 +86,8 @@ public partial class LlmContextBuilder(
                 ModelName: settings.ModelName,
                 Temperature: settings.Temperature,
                 MaxTokens: settings.MaxTokens
-            )
+            ),
+            Tools: [.. toolRegistry.AIFunctions]
         );
 
         logger.LogDebug("[LLM] Context built: {MsgCount} messages, {Available} tokens available for history",
@@ -105,7 +113,10 @@ public partial class LlmContextBuilder(
         });
     }
     
-    private static string BuildDynamicContextBlock(ResolvedLlmSettings settings, VoiceSessionState sessionState)
+    private string BuildDynamicContextBlock(
+        ResolvedLlmSettings settings,
+        VoiceSessionState sessionState,
+        IReadOnlyDictionary<string, string> memories)
     {
         var timeZone = TimeZoneInfo.Utc;
         try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); }
@@ -117,12 +128,25 @@ public partial class LlmContextBuilder(
             ? string.Join(", ", sessionState.Users.Select(u => u.DisplayName))
             : "none";
 
-        return $"""
+        var block = $"""
                 ## Current Context
                 - Time: {localTime:dddd, dd MMMM yyyy, HH:mm} {timeZone.StandardName}
                 - Server: {sessionState.GuildName}{(sessionState.ChannelName != null ? $" (channel: {sessionState.ChannelName})" : "")}
                 - Users currently in channel: {users}
                 """;
+        
+        var soundNames = soundboardService.GetSoundNames();
+        if (soundNames.Count > 0)
+            block += $"\n- Available sounds: {string.Join(", ", soundNames)}";
+
+        if (memories.Count > 0)
+        {
+            block += "\n- Memories:";
+            foreach (var (key, value) in memories)
+                block += $"\n  - {key}: {value}";
+        }
+
+        return block;
     }
     
     private async Task<List<LlmMessage>> TrimToTokenBudgetAsync(
@@ -131,49 +155,64 @@ public partial class LlmContextBuilder(
         int budget,
         CancellationToken ct)
     {
-        var result = new LinkedList<LlmMessage>();
-        var used = 0;
+        if (budget <= 0) return [];
 
+        var messages = new List<LlmMessage>();
+        var usedTokens = 0;
+
+        // Walk from newest to oldest, include as many as fit in the budget
         for (var i = events.Count - 1; i >= 0; i--)
         {
             var msg = MakeLlmMessage(events[i], sessionState);
             if (msg == null) continue;
 
-            var tokens = await tokenCounter.CountTokensAsync(msg.Content, ct);
-            if (used + tokens > budget) break;
+            var tokens = await GetCachedTokenCountAsync(events[i], msg.Content, ct);
+            if (usedTokens + tokens > budget) break;
 
-            result.AddFirst(msg);
-            used += tokens;
+            messages.Insert(0, msg);
+            usedTokens += tokens;
         }
 
-        return result.ToList();
+        return messages;
     }
-    
+
+    private async Task<int> GetCachedTokenCountAsync(
+        VoiceSessionEventDocument evt,
+        string text,
+        CancellationToken ct)
+    {
+        if (evt.Data.TryGetValue("token_count", out var cached))
+            return cached.AsInt32;
+
+        var count = await tokenCounter.CountTokensAsync(text, ct);
+        evt.Data["token_count"] = count;
+        return count;
+    }
+
     private static LlmMessage? MakeLlmMessage(VoiceSessionEventDocument evt, VoiceSessionState sessionState) =>
         evt.Type switch
         {
-            VoiceSessionEventType.Transcript when evt.Data.Contains("text") =>
-                new LlmMessage("user",
-                    $"[{GetDisplayName(evt, sessionState)}]: {evt.Data["text"].AsString}"),
-
-            VoiceSessionEventType.BotResponse when evt.Data.Contains("content") =>
-                new LlmMessage("assistant",
-                    evt.Data["content"].AsString
-                    + (evt.Data.Contains("is_partial") && evt.Data["is_partial"].AsBoolean
-                        ? " [interrupted]"
-                        : "")),
-
-            VoiceSessionEventType.UserJoined when evt.Data.Contains("display_name") =>
-                new LlmMessage("system",
-                    $"[EVENT] {evt.Data["display_name"].AsString} joined the voice channel."),
-
-            VoiceSessionEventType.UserLeft when evt.Data.Contains("display_name") =>
-                new LlmMessage("system",
-                    $"[EVENT] {evt.Data["display_name"].AsString} left the voice channel."),
-
-            VoiceSessionEventType.SystemNote when evt.Data.Contains("note") =>
-                new LlmMessage("system", evt.Data["note"].AsString),
-
+            VoiceSessionEventType.Transcript => new LlmMessage(
+                "user",
+                $"[{GetDisplayName(evt, sessionState)}]: {evt.Data["text"].AsString}"
+            ),
+            VoiceSessionEventType.BotResponse => new LlmMessage(
+                "assistant",
+                evt.Data["content"].AsString
+                    + (evt.Data["is_partial"].AsBoolean ? " [interrupted]" : "")
+            ),
+            VoiceSessionEventType.UserJoined => new LlmMessage(
+                "system",
+                $"[EVENT] {evt.Data["display_name"].AsString} joined the voice channel."
+            ),
+            VoiceSessionEventType.UserLeft => new LlmMessage(
+                "system",
+                $"[EVENT] {evt.Data["display_name"].AsString} left the voice channel."
+            ),
+            VoiceSessionEventType.SystemNote => new LlmMessage(
+                "system",
+                evt.Data["note"].AsString
+            ),
             _ => null
         };
 

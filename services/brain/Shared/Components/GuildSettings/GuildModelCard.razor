@@ -15,7 +15,7 @@
                     @if (AvailableModels.Count > 0)
                     {
                         <MudSelect @bind-Value="Edit.ModelName"
-                                   Variant="Variant.Outlined" Dense="true"
+                                   Variant="Variant.Outlined"
                                    Placeholder="@(Defaults.ModelName ?? "Select model...")">
                             @foreach (var model in AvailableModels)
                             {
@@ -26,7 +26,7 @@
                     else
                     {
                         <MudTextField @bind-Value="Edit.ModelName"
-                                      Variant="Variant.Outlined" Dense="true"
+                                      Variant="Variant.Outlined"
                                       Placeholder="e.g. mistral:7b (no models found in Ollama)"
                                       HelperText="Ollama returned no models. Enter a name manually or pull a model first." />
                     }
