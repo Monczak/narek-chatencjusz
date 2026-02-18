@@ -1,6 +1,7 @@
 @page "/guild-settings"
 @using BrainService.Domain.Llm
 @using BrainService.Services.Llm
+@using BrainService.Shared.Components.GuildSettings
 @inject GuildSettingsService SettingsService
 @inject OllamaModelService OllamaModelService
 @inject VoiceSessionHistoryService HistoryService
@@ -47,211 +48,28 @@
                 Uncheck a field to revert it to the default.
             </MudAlert>
         </MudItem>
-
-        <!-- Identity -->
+        
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h6">Identity</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <OverrideField Label="Bot Name"
-                                          IsOverridden="@(_edit.BotName != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.BotName = null; else _edit.BotName = _defaults.BotName; }"
-                                          DefaultHint="@_defaults.BotName">
-                                <MudTextField @bind-Value="_edit.BotName"
-                                              Variant="Variant.Outlined" Dense="true"
-                                              Placeholder="@_defaults.BotName" />
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12">
-                            <OverrideField Label="System Prompt"
-                                          IsOverridden="@(_edit.SystemPrompt != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.SystemPrompt = null; else _edit.SystemPrompt = _defaults.SystemPrompt; }"
-                                          DefaultHint="@("Using server default system prompt")">
-                                <MudTextField @bind-Value="_edit.SystemPrompt"
-                                              Variant="Variant.Outlined" Lines="6"
-                                              Placeholder="@_defaults.SystemPrompt" />
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12">
-                            <OverrideField Label="Custom Instructions"
-                                          IsOverridden="@(_edit.CustomInstructions != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.CustomInstructions = null; else _edit.CustomInstructions = string.Empty; }"
-                                          DefaultHint="@("None")">
-                                <MudTextField @bind-Value="_edit.CustomInstructions"
-                                              Variant="Variant.Outlined" Lines="3"
-                                              Placeholder="Additional instructions appended after the system prompt..." />
-                            </OverrideField>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-            </MudCard>
+            <GuildIdentityCard Edit="@_edit" Defaults="@_defaults" />
         </MudItem>
 
-        <!-- Model -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h6">Model</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <OverrideField Label="Ollama Model"
-                                          IsOverridden="@(_edit.ModelName != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.ModelName = null; else _edit.ModelName = _defaults.ModelName ?? string.Empty; }"
-                                          DefaultHint="@(_defaults.ModelName ?? "None configured")">
-                                @if (_availableModels.Count > 0)
-                                {
-                                    <MudSelect @bind-Value="_edit.ModelName"
-                                               Variant="Variant.Outlined" Dense="true"
-                                               Placeholder="@(_defaults.ModelName ?? "Select model...")">
-                                        @foreach (var model in _availableModels)
-                                        {
-                                            <MudSelectItem Value="@model">@model</MudSelectItem>
-                                        }
-                                    </MudSelect>
-                                }
-                                else
-                                {
-                                    <MudTextField @bind-Value="_edit.ModelName"
-                                                  Variant="Variant.Outlined" Dense="true"
-                                                  Placeholder="e.g. mistral:7b (no models found in Ollama)"
-                                                  HelperText="Ollama returned no models. Enter a name manually or pull a model first." />
-                                }
-                            </OverrideField>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-            </MudCard>
+            <GuildModelCard Edit="@_edit" Defaults="@_defaults" AvailableModels="@_availableModels" />
         </MudItem>
 
-        <!-- Generation -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h6">Generation</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Temperature"
-                                          IsOverridden="@(_edit.Temperature != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.Temperature = null; else _edit.Temperature = _defaults.Temperature; }"
-                                          DefaultHint="@_defaults.Temperature.ToString("F2")">
-                                <MudSlider @bind-Value="EditTemperature"
-                                           Min="0f" Max="2f" Step="0.05f"
-                                           Color="Color.Primary">
-                                    @(EditTemperature.ToString("F2"))
-                                </MudSlider>
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Max Tokens"
-                                          IsOverridden="@(_edit.MaxTokens != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.MaxTokens = null; else _edit.MaxTokens = _defaults.MaxTokens; }"
-                                          DefaultHint="@_defaults.MaxTokens.ToString()">
-                                <MudNumericField @bind-Value="_edit.MaxTokens"
-                                                 Variant="Variant.Outlined" Dense="true"
-                                                 Min="64" Max="8192" />
-                            </OverrideField>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-            </MudCard>
+            <GuildGenerationCard Edit="@_edit" Defaults="@_defaults" />
         </MudItem>
 
-        <!-- Timing -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h6">Timing</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Silence Threshold (ms)"
-                                          IsOverridden="@(_edit.SilenceThresholdMs != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.SilenceThresholdMs = null; else _edit.SilenceThresholdMs = _defaults.SilenceThresholdMs; }"
-                                          DefaultHint="@_defaults.SilenceThresholdMs.ToString()">
-                                <MudNumericField @bind-Value="_edit.SilenceThresholdMs"
-                                                 Variant="Variant.Outlined" Dense="true"
-                                                 Min="300" Max="10000" />
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Time Zone"
-                                          IsOverridden="@(_edit.TimeZone != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.TimeZone = null; else _edit.TimeZone = _defaults.TimeZone; }"
-                                          DefaultHint="@_defaults.TimeZone">
-                                <MudTextField @bind-Value="_edit.TimeZone"
-                                              Variant="Variant.Outlined" Dense="true"
-                                              Placeholder="e.g. Europe/London, America/New_York" />
-                            </OverrideField>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-            </MudCard>
+            <GuildTimingCard Edit="@_edit" Defaults="@_defaults" />
         </MudItem>
 
-        <!-- Ramble Mode -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h6">Ramble Mode</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Enable Ramble Mode"
-                                          IsOverridden="@(_edit.RambleModeEnabled != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.RambleModeEnabled = null; else _edit.RambleModeEnabled = _defaults.RambleModeEnabled; }"
-                                          DefaultHint="@(_defaults.RambleModeEnabled ? "Enabled" : "Disabled")">
-                                <MudSwitch @bind-Value="_edit.RambleModeEnabled"
-                                           Color="Color.Success"
-                                           Label="@(_edit.RambleModeEnabled == true ? "Enabled" : "Disabled")" />
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12" sm="6" md="4">
-                            <OverrideField Label="Ramble Threshold (ms)"
-                                          IsOverridden="@(_edit.RambleThresholdMs != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.RambleThresholdMs = null; else _edit.RambleThresholdMs = _defaults.RambleThresholdMs; }"
-                                          DefaultHint="@_defaults.RambleThresholdMs.ToString()">
-                                <MudNumericField @bind-Value="_edit.RambleThresholdMs"
-                                                 Variant="Variant.Outlined" Dense="true"
-                                                 Min="10000" Max="600000" />
-                            </OverrideField>
-                        </MudItem>
-                        <MudItem xs="12">
-                            <OverrideField Label="Ramble System Hint"
-                                          IsOverridden="@(_edit.RambleSystemHint != null)"
-                                          IsOverriddenChanged="v => { if (!v) _edit.RambleSystemHint = null; else _edit.RambleSystemHint = _defaults.RambleSystemHint; }"
-                                          DefaultHint="@("Using server default hint")">
-                                <MudTextField @bind-Value="_edit.RambleSystemHint"
-                                              Variant="Variant.Outlined" Lines="2"
-                                              Placeholder="@_defaults.RambleSystemHint" />
-                            </OverrideField>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               OnClick=@SaveAsync Disabled="_isSaving">
-                        @if (_isSaving)
-                        {
-                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                        }
-                        Save
-                    </MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Error"
-                               OnClick=@ResetAllAsync Disabled="_isSaving" Class="ml-2">
-                        Reset All to Defaults
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <GuildRambleModeCard Edit="@_edit" Defaults="@_defaults"
+                                 IsSaving="@_isSaving"
+                                 OnSave="@SaveAsync"
+                                 OnResetAll="@ResetAllAsync" />
         </MudItem>
     }
 </MudGrid>
@@ -266,12 +84,6 @@
     private ResolvedLlmSettings? _defaults;
     private bool _isLoading;
     private bool _isSaving;
-
-    private float EditTemperature
-    {
-        get => _edit?.Temperature ?? _defaults?.Temperature ?? 0.8f;
-        set => _edit?.Temperature = value;
-    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -347,7 +159,7 @@
         {
             await SettingsService.DeleteSettingsAsync(_selectedGuildId.Value);
             _edit = new GuildLlmSettings { GuildId = _selectedGuildId.Value };
-            Snackbar.Add("All overrides cleared - guild is using server defaults.", Severity.Info);
+            Snackbar.Add("All overrides cleared - guild is using server defaults.", Severity.Success);
         }
         catch (Exception ex)
         {

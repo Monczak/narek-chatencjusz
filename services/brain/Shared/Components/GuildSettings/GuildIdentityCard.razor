@@ -1,0 +1,47 @@
+@using BrainService.Domain.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Identity</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <OverrideField Label="Bot Name"
+                               IsOverridden="@(Edit.BotName != null)"
+                               IsOverriddenChanged="v => { Edit.BotName = !v ? null : Defaults.BotName; }"
+                               DefaultHint="@Defaults.BotName">
+                    <MudTextField @bind-Value="Edit.BotName"
+                                  Variant="Variant.Outlined" Dense="true"
+                                  Placeholder="@Defaults.BotName" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12">
+                <OverrideField Label="System Prompt"
+                               IsOverridden="@(Edit.SystemPrompt != null)"
+                               IsOverriddenChanged="v => { Edit.SystemPrompt = !v ? null : Defaults.SystemPrompt; }"
+                               DefaultHint="@("Using server default system prompt")">
+                    <MudTextField @bind-Value="Edit.SystemPrompt"
+                                  Variant="Variant.Outlined" Lines="6"
+                                  Placeholder="@Defaults.SystemPrompt" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12">
+                <OverrideField Label="Custom Instructions"
+                               IsOverridden="@(Edit.CustomInstructions != null)"
+                               IsOverriddenChanged="v => { Edit.CustomInstructions = !v ? null : string.Empty; }"
+                               DefaultHint="@("None")">
+                    <MudTextField @bind-Value="Edit.CustomInstructions"
+                                  Variant="Variant.Outlined" Lines="3"
+                                  Placeholder="Additional instructions appended after the system prompt..." />
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+}

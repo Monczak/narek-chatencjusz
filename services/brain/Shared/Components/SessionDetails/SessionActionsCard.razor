@@ -1,0 +1,19 @@
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h5">Actions</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.CallEnd"
+                   OnClick="@OnEndSession"
+                   Disabled="@IsBusy">
+            End Session
+        </MudButton>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public bool IsBusy { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnEndSession { get; set; }
+}

@@ -1,0 +1,45 @@
+@using BrainService.Domain.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Generation</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Temperature"
+                               IsOverridden="@(Edit.Temperature != null)"
+                               IsOverriddenChanged="v => { Edit.Temperature = !v ? null : Defaults.Temperature; }"
+                               DefaultHint="@Defaults.Temperature.ToString("F2")">
+                    <MudSlider @bind-Value="EditTemperature"
+                               Min="0f" Max="2f" Step="0.05f"
+                               Color="Color.Primary">
+                        @(EditTemperature.ToString("F2"))
+                    </MudSlider>
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Max Tokens"
+                               IsOverridden="@(Edit.MaxTokens != null)"
+                               IsOverriddenChanged="v => { Edit.MaxTokens = !v ? null : Defaults.MaxTokens; }"
+                               DefaultHint="@Defaults.MaxTokens.ToString()">
+                    <MudNumericField @bind-Value="Edit.MaxTokens"
+                                     Variant="Variant.Outlined" Dense="true"
+                                     Min="64" Max="8192" />
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+
+    private float EditTemperature
+    {
+        get => Edit.Temperature ?? Defaults.Temperature;
+        set => Edit.Temperature = value;
+    }
+}

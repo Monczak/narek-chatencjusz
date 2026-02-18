@@ -1,0 +1,30 @@
+<MudCard Class="h-100 cursor-pointer" @onclick="@(() => OnClick.InvokeAsync(Session.SessionId))">
+    <MudCardHeader>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">@Session.GuildName (@(Session.GuildId))</MudText>
+            <MudText Typo="Typo.subtitle1">Channel: @Session.ChannelName (@(Session.ChannelId))</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Session: @Session.SessionId</MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <SessionBadge State="@Session.MachineState"></SessionBadge>
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudStack Row="true" Spacing="4">
+            <MudText>
+                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small"/>
+                @Session.Users.Count Users
+            </MudText>
+            <MudText>
+                <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small"/>
+                @Duration
+            </MudText>
+        </MudStack>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public VoiceSessionState Session { get; set; } = null!;
+    [Parameter, EditorRequired] public string Duration { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public EventCallback<string> OnClick { get; set; }
+}

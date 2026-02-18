@@ -1,0 +1,65 @@
+@using BrainService.Domain.Llm
+@using BrainService.Services.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Ramble Mode</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Enable Ramble Mode"
+                               IsOverridden="@(Edit.RambleModeEnabled != null)"
+                               IsOverriddenChanged="v => { Edit.RambleModeEnabled = !v ? null : Defaults.RambleModeEnabled; }"
+                               DefaultHint="@(Defaults.RambleModeEnabled ? "Enabled" : "Disabled")">
+                    <MudSwitch @bind-Value="Edit.RambleModeEnabled"
+                               Color="Color.Success"
+                               Label="@(Edit.RambleModeEnabled == true ? "Enabled" : "Disabled")" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Ramble Threshold (ms)"
+                               IsOverridden="@(Edit.RambleThresholdMs != null)"
+                               IsOverriddenChanged="v => { Edit.RambleThresholdMs = !v ? null : Defaults.RambleThresholdMs; }"
+                               DefaultHint="@Defaults.RambleThresholdMs.ToString()">
+                    <MudNumericField @bind-Value="Edit.RambleThresholdMs"
+                                     Variant="Variant.Outlined" Dense="true"
+                                     Min="10000" Max="600000" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12">
+                <OverrideField Label="Ramble System Hint"
+                               IsOverridden="@(Edit.RambleSystemHint != null)"
+                               IsOverriddenChanged="v => { Edit.RambleSystemHint = !v ? null : Defaults.RambleSystemHint; }"
+                               DefaultHint="@("Using server default hint")">
+                    <MudTextField @bind-Value="Edit.RambleSystemHint"
+                                  Variant="Variant.Outlined" Lines="2"
+                                  Placeholder="@Defaults.RambleSystemHint" />
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+    <MudCardActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="@OnSave" Disabled="@IsSaving">
+            @if (IsSaving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Save
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                   OnClick="@OnResetAll" Disabled="@IsSaving" Class="ml-2">
+            Reset All to Defaults
+        </MudButton>
+    </MudCardActions>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+    [Parameter, EditorRequired] public bool IsSaving { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnSave { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnResetAll { get; set; }
+}

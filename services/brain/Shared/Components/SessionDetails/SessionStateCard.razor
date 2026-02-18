@@ -1,0 +1,40 @@
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h5">Current State</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="4">
+                <MudText Typo="Typo.h6">Channel</MudText>
+                <MudText Typo="Typo.body1">@Session.ChannelName</MudText>
+                <MudText Typo="Typo.body1">@Session.ChannelId</MudText>
+            </MudItem>
+            <MudItem xs="4">
+                <MudText Typo="Typo.h6">Last Known Node</MudText>
+                <MudText Typo="Typo.body1">@Session.NodeId</MudText>
+            </MudItem>
+            <MudItem xs="4">
+                <MudText Typo="Typo.h6">Connected Users (@(Session.Users.Count))</MudText>
+                <MudChipSet T="string">
+                    @foreach (var user in Session.Users)
+                    {
+                        var isSpeaking = Session.SpeakingUsers.Contains(user.UserId);
+                        <MudChip Color="@(isSpeaking ? Color.Success : Color.Default)"
+                                 Variant="@(isSpeaking ? Variant.Filled : Variant.Outlined)"
+                                 Icon="@(isSpeaking ? Icons.Material.Filled.Mic : Icons.Material.Filled.MicOff)">
+                            @user.DisplayName
+                        </MudChip>
+                    }
+                    @if (Session.Users.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2">No users connected</MudText>
+                    }
+                </MudChipSet>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public VoiceSessionState Session { get; set; } = null!;
+}

@@ -1,6 +1,7 @@
 @page "/session/{SessionIdParam}"
 @using BrainService.Domain.Audio
 @using BrainService.Proto.Brain
+@using BrainService.Shared.Components.SessionDetails
 @using Microsoft.AspNetCore.SignalR.Client
 @inject VoiceSessionService SessionService
 @inject VoiceSessionHistoryService HistoryService
@@ -39,272 +40,35 @@ else
                 <MudText Typo="Typo.caption" Class="mt-1">Last Updated: @GetTimeAgo(_session.LastUpdated)</MudText>
             </MudStack>
         </MudItem>
-
+        
         <!-- Current state -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h5">Current State</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="4">
-                            <MudText Typo="Typo.h6">Channel</MudText>
-                            <MudText Typo="Typo.body1">@_session.ChannelName</MudText>
-                            <MudText Typo="Typo.body1">@_session.ChannelId</MudText>
-                        </MudItem>
-                        <MudItem xs="4">
-                            <MudText Typo="Typo.h6">Last Known Node</MudText>
-                            <MudText Typo="Typo.body1">@_session.NodeId</MudText>
-                        </MudItem>
-                        <MudItem xs="4">
-                            <MudText Typo="Typo.h6">Connected Users (@(_session.Users.Count))</MudText>
-                            <MudChipSet T="string">
-                                @foreach (var user in _session.Users)
-                                {
-                                    var isSpeaking = _session.SpeakingUsers.Contains(user.UserId);
-                                    <MudChip Color="@(isSpeaking ? Color.Success : Color.Default)"
-                                             Variant="@(isSpeaking ? Variant.Filled : Variant.Outlined)"
-                                             Icon="@(isSpeaking ? Icons.Material.Filled.Mic : Icons.Material.Filled.MicOff)">
-                                        @user.DisplayName
-                                    </MudChip>
-                                }
-                                @if (_session.Users.Count == 0)
-                                {
-                                    <MudText Typo="Typo.body2">No users connected</MudText>
-                                }
-                            </MudChipSet>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
-            </MudCard>
+            <SessionStateCard Session="@_session" />
         </MudItem>
-        
+
         <!-- Actions -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent><MudText Typo="Typo.h5">Actions</MudText></CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Error"
-                               StartIcon="@Icons.Material.Filled.CallEnd"
-                               OnClick="@(async () => await EndSessionAsync())"
-                               Disabled="@_isBusy">
-                        End Session
-                    </MudButton>
-                </MudCardContent>
-            </MudCard>
+            <SessionActionsCard IsBusy="@_isBusy" OnEndSession="@EndSessionAsync" />
         </MudItem>
-        
+
         <!-- Session Timeline -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                            <MudText Typo="Typo.h5">Session Timeline</MudText>
-                            @if (_eventsLoading)
-                            {
-                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-                            }
-                            else
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    @_events.Count event(s)
-                                </MudText>
-                            }
-                            @if (_llmStreaming)
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Primary"
-                                         Icon="@Icons.Material.Filled.FiberManualRecord">Generating...</MudChip>
-                            }
-                        </MudStack>
-                    </CardHeaderContent>
-                    <CardHeaderActions>
-                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
-                                       OnClick="@(async () => await LoadEventsAsync())"
-                                       Disabled="@_eventsLoading" />
-                    </CardHeaderActions>
-                </MudCardHeader>
-                <MudCardContent Class="pa-0">
-                    @if (_events.Count == 0 && !_eventsLoading)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">No events recorded yet.</MudText>
-                    }
-                    else
-                    {
-                        <div class="pa-4">
-                            <MudTimeline TimelinePosition="TimelinePosition.Start">
-                                @foreach (var evt in VisibleEvents)
-                                {
-                                    <MudTimelineItem Color="@GetEventColor(evt.Type)"
-                                                     Icon="@GetEventIcon(evt.Type)"
-                                                     Size="Size.Small">
-                                        <ItemContent>
-                                            <MudStack Spacing="0">
-                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                        @evt.Timestamp.ToLocalTime().ToString("HH:mm:ss")
-                                                    </MudText>
-                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                                             Color="@GetEventColor(evt.Type)">
-                                                        @evt.Type
-                                                    </MudChip>
-                                                    @if (evt.UserId.HasValue)
-                                                    {
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                            @GetDisplayName(evt)
-                                                        </MudText>
-                                                    }
-                                                </MudStack>
-                                                
-                                                @if (evt.Type == VoiceSessionEventType.Transcript && evt.Data.Contains("text"))
-                                                {
-                                                    <MudText Typo="Typo.body2" Class="mt-1">
-                                                        @evt.Data["text"].AsString
-                                                    </MudText>
-                                                    @if (evt.Data.Contains("language"))
-                                                    {
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                            [@evt.Data["language"].AsString
-                                                            · @(((float)evt.Data["confidence"].AsDouble).ToString("P0"))]
-                                                        </MudText>
-                                                    }
-                                                }
-                                                
-                                                @if (evt.Type == VoiceSessionEventType.BotResponse && evt.Data.Contains("content"))
-                                                {
-                                                    var isPartial = evt.Data.Contains("is_partial") && evt.Data["is_partial"].AsBoolean;
-                                                    <MudText Typo="Typo.body2" Class="mt-1"
-                                                             Style="@(isPartial ? "opacity:0.7;font-style:italic" : "")">
-                                                        @evt.Data["content"].AsString
-                                                        @if (isPartial) { <text> [interrupted]</text> }
-                                                    </MudText>
-                                                    @if (evt.Data.Contains("generation_ms") && evt.Data["generation_ms"].AsInt32 > 0)
-                                                    {
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                            [@evt.Data["generation_ms"].AsInt32 ms]
-                                                        </MudText>
-                                                    }
-                                                }
-                                                
-                                                @if (evt.Type == VoiceSessionEventType.SystemNote && evt.Data.Contains("note"))
-                                                {
-                                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1"
-                                                             Style="font-style:italic">
-                                                        @evt.Data["note"].AsString
-                                                    </MudText>
-                                                }
-                                            </MudStack>
-                                        </ItemContent>
-                                    </MudTimelineItem>
-                                }
-                            </MudTimeline>
-                        </div>
-
-                        @switch (_timelineExpanded)
-                        {
-                            case false when _events.Count > TimelinePreviewCount:
-                                <div @onclick=@(ExpandTimeline)
-                                     style="cursor:pointer; margin-top:-80px; padding-top:80px;
-                                        background: linear-gradient(to bottom, transparent, var(--mud-palette-surface));
-                                        display:flex; flex-direction:column; align-items:center;
-                                        padding-bottom:16px; user-select:none;">
-                                    <MudIcon Icon="@Icons.Material.Filled.ExpandMore" Color="Color.Secondary" />
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Show all @_events.Count events
-                                    </MudText>
-                                </div>
-                                break;
-                            case true when _events.Count > TimelinePreviewCount:
-                                <div Class="d-flex justify-center pb-3">
-                                    <MudButton Size="Size.Small"
-                                               Variant="Variant.Text"
-                                               StartIcon="@Icons.Material.Filled.ExpandLess"
-                                               OnClick=@(() => CollapseTimeline())>
-                                        Collapse
-                                    </MudButton>
-                                </div>
-                                break;
-                        }
-                    }
-                </MudCardContent>
-            </MudCard>
+            <SessionTimelineCard Events="@_events"
+                                 EventsLoading="@_eventsLoading"
+                                 LlmStreaming="@_llmStreaming"
+                                 Session="@_session"
+                                 OnRefreshRequested="@LoadEventsAsync" />
         </MudItem>
-        
+
         <!-- DSP Performance -->
         <MudItem xs="12">
-            <MudCard>
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                            <MudText Typo="Typo.h5">DSP Performance</MudText>
-                            @if (_dspMetrics != null)
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
-                                         Icon="@Icons.Material.Filled.FiberManualRecord">Live</MudChip>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    @_dspMetrics.Timestamp.ToString("HH:mm:ss.fff")
-                                </MudText>
-                            }
-                            else
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Default"
-                                         Icon="@Icons.Material.Filled.FiberManualRecord">Waiting</MudChip>
-                            }
-                        </MudStack>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                            Queue depth = frames waiting in each node's output channel. Non-zero = backpressure.
-                        </MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    @if (_dspMetrics == null)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            No data yet - metrics arrive once the audio graph is active.
-                        </MudText>
-                    }
-                    else
-                    {
-                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="3">
-                            @foreach (var node in _dspMetrics.Nodes)
-                            {
-                                var chipColor = node.QueueDepth switch
-                                {
-                                    0      => Color.Default,
-                                    1 or 2 => Color.Success,
-                                    3 or 4 => Color.Warning,
-                                    _      => Color.Error
-                                };
-                                <MudPaper Outlined="true" Class="pa-3" Style="min-width:120px">
-                                    <MudStack AlignItems="AlignItems.Center" Spacing="1">
-                                        <MudText Typo="Typo.caption">@node.Name</MudText>
-                                        <MudChip T="string" Color="@chipColor" Size="Size.Small">@node.QueueDepth</MudChip>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">frames</MudText>
-                                    </MudStack>
-                                </MudPaper>
-                            }
-                        </MudStack>
-                        <MudGrid Class="mt-4">
-                            <MudItem xs="4">
-                                <MudText Typo="Typo.h6">Average Total DSP Latency</MudText>
-                                <MudText Typo="Typo.body1">@(_dspMetrics.AverageLatencyMs.ToString("F2")) ms</MudText>
-                            </MudItem>
-                        </MudGrid>
-                    }
-                </MudCardContent>
-            </MudCard>
+            <DspMetricsCard DspMetrics="@_dspMetrics" />
         </MudItem>
     </MudGrid>
 }
 
 @code {
     [Parameter] public required string SessionIdParam { get; set; }
-
-    private const int TimelinePreviewCount = 10;
 
     private VoiceSessionState? _session;
     private DspSessionMetrics? _dspMetrics;
@@ -313,13 +77,7 @@ else
     private bool _isLoading = true;
     private bool _eventsLoading;
     private bool _isBusy;
-    private bool _timelineExpanded;
     private bool _llmStreaming;
-
-    private IEnumerable<VoiceSessionEventDocument> VisibleEvents =>
-        (_timelineExpanded
-            ? _events
-            : _events.TakeLast(TimelinePreviewCount)).Reverse();
 
     protected override async Task OnInitializedAsync()
     {
@@ -410,25 +168,6 @@ else
         });
     }
 
-    private void ExpandTimeline()  { _timelineExpanded = true;  StateHasChanged(); }
-    private void CollapseTimeline() { _timelineExpanded = false; StateHasChanged(); }
-
-    private string GetDisplayName(VoiceSessionEventDocument evt)
-    {
-        if (evt.UserId is null) return string.Empty;
-
-        var user = _session?.Users.FirstOrDefault(u => (long)u.UserId == evt.UserId.Value);
-        if (user != null) return user.DisplayName;
-
-        if (evt.Data.TryGetValue("display_name", out var nameElement) &&
-            nameElement.BsonType == MongoDB.Bson.BsonType.String)
-        {
-            return nameElement.AsString;
-        }
-        
-        return $"User {evt.UserId}";
-    }
-
     private async Task EndSessionAsync()
     {
         if (_session == null) return;
@@ -455,30 +194,6 @@ else
         finally { _isBusy = false; }
     }
 
-    private static Color GetEventColor(VoiceSessionEventType type) => type switch
-    {
-        VoiceSessionEventType.Transcript  => Color.Primary,
-        VoiceSessionEventType.BotResponse => Color.Secondary,
-        VoiceSessionEventType.SystemNote  => Color.Default,
-        VoiceSessionEventType.UserJoined  => Color.Success,
-        VoiceSessionEventType.UserLeft    => Color.Warning,
-        VoiceSessionEventType.Started     => Color.Info,
-        VoiceSessionEventType.Ended       => Color.Dark,
-        _ => Color.Default,
-    };
-
-    private static string GetEventIcon(VoiceSessionEventType type) => type switch
-    {
-        VoiceSessionEventType.Transcript  => Icons.Material.Filled.RecordVoiceOver,
-        VoiceSessionEventType.BotResponse => Icons.Material.Filled.SmartToy,
-        VoiceSessionEventType.SystemNote  => Icons.Material.Filled.Info,
-        VoiceSessionEventType.UserJoined  => Icons.Material.Filled.PersonAdd,
-        VoiceSessionEventType.UserLeft    => Icons.Material.Filled.PersonRemove,
-        VoiceSessionEventType.Started     => Icons.Material.Filled.PlayCircle,
-        VoiceSessionEventType.Ended       => Icons.Material.Filled.StopCircle,
-        _ => Icons.Material.Filled.Info,
-    };
-
     private static string GetTimeAgo(DateTime lastUpdated)
     {
         var span = DateTime.UtcNow - lastUpdated;
@@ -489,5 +204,4 @@ else
     {
         if (_hubConnection != null) await _hubConnection.DisposeAsync();
     }
-    
 }

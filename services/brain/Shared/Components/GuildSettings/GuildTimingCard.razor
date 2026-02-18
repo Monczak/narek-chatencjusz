@@ -1,0 +1,37 @@
+@using BrainService.Domain.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Timing</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Silence Threshold (ms)"
+                               IsOverridden="@(Edit.SilenceThresholdMs != null)"
+                               IsOverriddenChanged="v => { Edit.SilenceThresholdMs = !v ? null : Defaults.SilenceThresholdMs; }"
+                               DefaultHint="@Defaults.SilenceThresholdMs.ToString()">
+                    <MudNumericField @bind-Value="Edit.SilenceThresholdMs"
+                                     Variant="Variant.Outlined" Dense="true"
+                                     Min="300" Max="10000" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Time Zone"
+                               IsOverridden="@(Edit.TimeZone != null)"
+                               IsOverriddenChanged="v => { Edit.TimeZone = !v ? null : Defaults.TimeZone; }"
+                               DefaultHint="@Defaults.TimeZone">
+                    <MudTextField @bind-Value="Edit.TimeZone"
+                                  Variant="Variant.Outlined" Dense="true"
+                                  Placeholder="e.g. Europe/London, America/New_York" />
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+}

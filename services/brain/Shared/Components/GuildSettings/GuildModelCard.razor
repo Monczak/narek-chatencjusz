@@ -1,0 +1,43 @@
+@using BrainService.Domain.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Model</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <OverrideField Label="Ollama Model"
+                               IsOverridden="@(Edit.ModelName != null)"
+                               IsOverriddenChanged="v => { Edit.ModelName = !v ? null : Defaults.ModelName ?? string.Empty; }"
+                               DefaultHint="@(Defaults.ModelName ?? "None configured")">
+                    @if (AvailableModels.Count > 0)
+                    {
+                        <MudSelect @bind-Value="Edit.ModelName"
+                                   Variant="Variant.Outlined" Dense="true"
+                                   Placeholder="@(Defaults.ModelName ?? "Select model...")">
+                            @foreach (var model in AvailableModels)
+                            {
+                                <MudSelectItem Value="@model">@model</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                    else
+                    {
+                        <MudTextField @bind-Value="Edit.ModelName"
+                                      Variant="Variant.Outlined" Dense="true"
+                                      Placeholder="e.g. mistral:7b (no models found in Ollama)"
+                                      HelperText="Ollama returned no models. Enter a name manually or pull a model first." />
+                    }
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+    [Parameter, EditorRequired] public List<string> AvailableModels { get; set; } = [];
+}
