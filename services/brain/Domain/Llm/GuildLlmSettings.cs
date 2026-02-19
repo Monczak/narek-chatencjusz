@@ -40,6 +40,7 @@ public class GuildLlmSettings
     public int? RambleMinResponseLength { get; set; }
     
     public List<string>? EnabledTools { get; set; }
+    public bool? ToolsEnabled { get; set; }
     
     public string? TimeZone { get; set; }
 }
@@ -63,5 +64,7 @@ public class ResolvedLlmSettings
     public string RambleSystemHint { get; set; } = "";
     public int RambleMinResponseLength { get; set; }
     public IReadOnlyList<string>? EnabledTools { get; set; }
+    public bool ToolsEnabled { get; set; }
+    public string ToolGuidance { get; set; } = "";
     public string TimeZone { get; set; } = "UTC";
 }

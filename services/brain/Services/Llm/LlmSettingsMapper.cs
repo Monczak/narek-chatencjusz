@@ -305,6 +305,17 @@ public static class LlmSettingsMapper
             setResolved:  (r, v) => r.RambleModeEnabled = v,
             readDefault:  (sec, _, _) => sec.GetValue("RambleModeEnabled", false)
         ),
+        new ValueField<bool>(
+            protoName:    "tools_enabled",
+            hasInProto:   p => p.HasToolsEnabled,
+            fromProto:    p => p.ToolsEnabled,
+            toProto:      (p, v) => p.ToolsEnabled = v,
+            fromOverride: s => s.ToolsEnabled,
+            setOverride:  (s, v) => s.ToolsEnabled = v,
+            fromResolved: r => r.ToolsEnabled,
+            setResolved:  (r, v) => r.ToolsEnabled = v,
+            readDefault:  (sec, _, _) => sec.GetValue("ToolsEnabled", true)
+        ),
 
         // -- Enum fields without proto bindings --
 
@@ -333,7 +344,8 @@ public static class LlmSettingsMapper
     public static ResolvedLlmSettings BuildDefaults(
         IConfigurationSection section,
         string systemPrompt,
-        string rambleHint)
+        string rambleHint,
+        string toolGuidance)
     {
         var dst = new ResolvedLlmSettings();
         foreach (var f in Fields)
@@ -341,6 +353,10 @@ public static class LlmSettingsMapper
 
         // EnabledTools has no config representation - always null at default level
         dst.EnabledTools = null;
+        
+        // ToolGuidance is server-only - not overridable per guild
+        dst.ToolGuidance = toolGuidance;
+        
         return dst;
     }
     
@@ -352,6 +368,9 @@ public static class LlmSettingsMapper
 
         // EnabledTools is handled separately (list type, no proto binding)
         dst.EnabledTools = g?.EnabledTools ?? defaults.EnabledTools;
+        
+        // ToolGuidance is server-only - not overridable per guild
+        dst.ToolGuidance = defaults.ToolGuidance;
         return dst;
     }
     public static GuildLlmConfig ToResolvedProto(ResolvedLlmSettings s)

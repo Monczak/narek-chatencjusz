@@ -190,6 +190,7 @@ message GuildLlmConfig {
   optional string time_zone = 10;
   optional string model_name = 11;
   optional float repetition_penalty = 12;
+  optional bool tools_enabled = 13;
 }
 
 message GetGuildSettingsRequest {

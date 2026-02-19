@@ -50,6 +50,9 @@ class ConfigService:
 
     async def clear_model(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._clear(guild_id, "model_name")
+    
+    async def set_tools_enabled(self, guild_id: int, enabled: bool) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, tools_enabled=enabled)
 
     async def _patch(self, guild_id: int, **kwargs) -> brain_pb2.UpdateGuildSettingsResponse:
         patch = brain_pb2.GuildLlmConfig(**kwargs)

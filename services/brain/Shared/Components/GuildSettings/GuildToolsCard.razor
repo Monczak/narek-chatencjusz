@@ -1,0 +1,27 @@
+@using BrainService.Domain.Llm
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Tools</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Enable Tool Calling"
+                               IsOverridden="@(Edit.ToolsEnabled != null)"
+                               IsOverriddenChanged="v => { Edit.ToolsEnabled = !v ? null : Defaults.ToolsEnabled; }"
+                               DefaultHint="@(Defaults.ToolsEnabled ? "Enabled" : "Disabled")">
+                    <MudSwitch @bind-Value="Edit.ToolsEnabled"
+                               Color="Color.Success"
+                               Label="@(Edit.ToolsEnabled == true ? "Enabled" : "Disabled")" />
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+}

@@ -6,7 +6,7 @@ namespace BrainService.Services.Audio.Nodes;
 
 public class SoundboardNode
 {
-    private readonly Channel<AudioFrame> _channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(200)
+    private readonly Channel<AudioFrame> _channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(2000)
     {
         FullMode = BoundedChannelFullMode.DropOldest,
     });

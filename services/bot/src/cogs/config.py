@@ -12,6 +12,7 @@ class ConfigCog(commands.Cog):
     inst_group   = config_group.create_subgroup("instructions", "Manage custom instructions appended to the prompt")
     ramble_group = config_group.create_subgroup("ramble", "Configure ramble (unprompted speech) mode")
     model_group  = config_group.create_subgroup("model", "Configure the Ollama model for this server")
+    tools_group  = config_group.create_subgroup("tools", "Configure which tools the bot can use")
 
     def __init__(self, bot: discord.Bot, config_service: ConfigService, response_service: ResponseService) -> None:
         self.bot = bot
@@ -179,6 +180,7 @@ class ConfigCog(commands.Cog):
             logging.error("ramble threshold failed: %s", e)
             await self.response.respond_error(ctx, "Failed to update ramble threshold.", ephemeral=True)
 
+    # Model
 
     @model_group.command(name="set", description="Set which Ollama model this server uses")
     async def model_set(
@@ -204,6 +206,23 @@ class ConfigCog(commands.Cog):
             logging.error("model clear failed: %s", e)
             await self.response.respond_error(ctx, "Failed to clear model override.", ephemeral=True)
 
+    # Tools
+
+    @tools_group.command(name="toggle", description="Enable or disable tool calling for this server")
+    async def tools_toggle(
+        self,
+        ctx: discord.ApplicationContext,
+        enabled: discord.Option(bool, "True to enable tool calling, False to disable"),  # type: ignore
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        try:
+            await self.config.set_tools_enabled(ctx.guild_id, enabled)  # type: ignore
+            state = "enabled" if enabled else "disabled"
+            await self.response.respond_success(ctx, "Tool calling updated", f"Tool calling **{state}**.", ephemeral=True)
+        except Exception as e:
+            logging.error("tools toggle failed: %s", e)
+            await self.response.respond_error(ctx, "Failed to update tool calling setting.", ephemeral=True)
+
 
 def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: list[str]) -> discord.Embed:
     r = resp.resolved
@@ -225,6 +244,7 @@ def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: 
     embed.add_field(name="Ramble Mode", value="Enabled" if r.ramble_mode_enabled else "Disabled", inline=True)
     embed.add_field(name="Ramble Threshold", value=f"{r.ramble_threshold_ms // 1000} s", inline=True)
     embed.add_field(name="Time Zone", value=r.time_zone or "UTC", inline=True)
+    embed.add_field(name="Tools Enabled", value="Enabled" if r.tools_enabled else "Disabled", inline=True)
 
     if available_models:
         embed.add_field(name="Available Models", value="\n".join(f"`{m}`" for m in available_models), inline=False)

@@ -37,6 +37,9 @@ public partial class LlmContextBuilder(
         var customInstructionsTokens = customInstructions != null
             ? await tokenCounter.CountTokensAsync(customInstructions, ct) : 0;
         var dynamicBlockTokens = await tokenCounter.CountTokensAsync(dynamicBlock, ct);
+        var toolGuidanceTokens = settings.ToolsEnabled && !string.IsNullOrWhiteSpace(settings.ToolGuidance)
+            ? await tokenCounter.CountTokensAsync(settings.ToolGuidance, ct)
+            : 0;
         
         var contextWindow = await ollamaModelService.GetContextWindowAsync(settings.ModelName, ct)
             ?? settings.ContextWindow;
@@ -46,6 +49,7 @@ public partial class LlmContextBuilder(
             - systemPromptTokens
             - customInstructionsTokens
             - dynamicBlockTokens
+            - toolGuidanceTokens
             - ContextWindowSafetyMargin;
         
         // Step 3: Load LLM-visible session history
@@ -73,6 +77,9 @@ public partial class LlmContextBuilder(
         if (!string.IsNullOrWhiteSpace(customInstructions))
             messages.Add(new LlmMessage("system", customInstructions));
         
+        if (settings.ToolsEnabled && !string.IsNullOrWhiteSpace(settings.ToolGuidance))
+            messages.Add(new LlmMessage("system", settings.ToolGuidance));
+        
         messages.Add(new LlmMessage("system", dynamicBlock));
         messages.AddRange(historyMessages);
         messages.AddRange(pendingMessages);
@@ -88,7 +95,7 @@ public partial class LlmContextBuilder(
                 RepetitionPenalty: settings.RepetitionPenalty,
                 MaxTokens: settings.MaxTokens
             ),
-            Tools: [.. toolRegistry.AIFunctions]
+            Tools: settings.ToolsEnabled ? [.. toolRegistry.AIFunctions] : []
         );
 
         logger.LogDebug("[LLM] Context built: {MsgCount} messages, {Available} tokens available for history",

@@ -18,11 +18,14 @@ public class GuildSettingsService
         
         var systemPrompt = TryReadPromptFile(config.GetValue<string>("Llm:SystemPromptFile"), DefaultPrompt);
         var rambleHint = TryReadPromptFile(config.GetValue<string>("Llm:RambleHintFile"), DefaultRambleHint);
+        var toolGuidance = TryReadPromptFile(config.GetValue<string>("Llm:ToolGuidanceFile"), DefaultToolGuidance);
         
         _defaults = LlmSettingsMapper.BuildDefaults(
             config.GetSection("Llm:Defaults"),
             systemPrompt,
-            rambleHint);
+            rambleHint,
+            toolGuidance
+        );
 
         EnsureIndex();
     }
@@ -102,4 +105,8 @@ public class GuildSettingsService
 
     private const string DefaultRambleHint =
         "[No one has spoken for a while. You may speak freely if you have something to say, or stay quiet.]";
+    
+    private const string DefaultToolGuidance =
+        "You have access to tools you can invoke during your response. Only use a tool when it genuinely fits " +
+        "the conversation - do not force tool usage. Prefer speaking naturally over invoking tools unnecessarily.";
 }
