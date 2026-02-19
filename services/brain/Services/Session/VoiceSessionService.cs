@@ -24,11 +24,37 @@ public class VoiceSessionService(
 ) 
 {
     private readonly IDatabase _db = redis.GetDatabase();
+
+    // (NEW)
+    private sealed class SessionTimer
+    {
+        private CancellationTokenSource? _cts;
+
+        public void Start(int delayMs, Func<Task> callback)
+        {
+            Cancel();
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+
+            _ = Task.Delay(delayMs, cts.Token).ContinueWith(
+                t => t.IsCanceled ? Task.CompletedTask : callback(),
+                TaskScheduler.Default);
+        }
+
+        public void Cancel()
+        {
+            var existing = Interlocked.Exchange(ref _cts, null);
+            existing?.Cancel();
+            existing?.Dispose();
+        }
+    }
     
     private sealed class SessionRuntimeState
     {
-        public CancellationTokenSource? SilenceTimerCts;
-        public CancellationTokenSource? GraceTimerCts;
+        public readonly SessionTimer SilenceTimer = new();
+        public readonly SessionTimer GraceTimer = new();
+        public readonly SessionTimer RambleTimer = new();
+        public ulong GuildId;
     
         public Queue<VoiceSessionEventDocument> PendingEvents { get; } = new();
         public DateTime LastLlmContextEventAt { get; set; } = DateTime.UtcNow;
@@ -184,9 +210,17 @@ public class VoiceSessionService(
                      && evt.UserState.ChangeType == UserVoiceStateUpdate.Types.ChangeType.Joined)
             {
                 // User joined while idle - start grace timer
+                runtime.RambleTimer.Cancel();
                 var settings = await settingsService.GetSettingsAsync(evt.Guild.Id);
                 StartGraceTimer(sessionId, evt.Guild.Id, settings.UserJoinGraceMs, runtime);
             }
+        }
+
+        if (evt.SessionUpdate?.ChangeType == SessionUpdate.Types.ChangeType.Started
+            && resultingState == VoiceSessionMachineState.Idle
+            && sessionId != null)
+        {
+            await StartRambleTimerIfEnabledAsync(sessionId, evt.Guild.Id);
         }
     }
 
@@ -258,11 +292,13 @@ public class VoiceSessionService(
         );
 
         var runtime = _runtimeStates.GetOrAdd(sessionId, _ => new SessionRuntimeState());
+        runtime.GuildId = guildId;
 
         if (isSpeaking)
         {
-            // Cancel silence timer if running
-            CancelTimer(ref runtime.SilenceTimerCts);
+            // User spoke - cancel any pending conversation timers
+            runtime.SilenceTimer.Cancel();
+            runtime.RambleTimer.Cancel();
 
             // Speaking during Thinking → cancel LLM immediately
             if (resultingState == VoiceSessionMachineState.Listening
@@ -383,84 +419,73 @@ public class VoiceSessionService(
         }
     }
     
-    public async Task FireConversationTriggerAsync(string sessionId, VoiceSessionMachineTrigger trigger)
+    public async Task<bool> FireConversationTriggerAsync(string sessionId, VoiceSessionMachineTrigger trigger)
     {
+        var transitioned = false;
         await ExecuteSessionTransactionAsync(sessionId,
             Task.FromResult,
             machine =>
             {
-                switch (trigger)
-                {
-                    case VoiceSessionMachineTrigger.SilenceThresholdReached: machine.Fire(VoiceSessionMachineTrigger.SilenceThresholdReached); break;
-                    case VoiceSessionMachineTrigger.RambleThresholdReached:  machine.Fire(VoiceSessionMachineTrigger.RambleThresholdReached);  break;
-                    case VoiceSessionMachineTrigger.UserJoinedGraceExpired:  machine.Fire(VoiceSessionMachineTrigger.UserJoinedGraceExpired);  break;
-                    case VoiceSessionMachineTrigger.LlmResponseStarted:      machine.Fire(VoiceSessionMachineTrigger.LlmResponseStarted);      break;
-                    case VoiceSessionMachineTrigger.LlmResponseCompleted:    machine.Fire(VoiceSessionMachineTrigger.LlmResponseCompleted);    break;
-                    case VoiceSessionMachineTrigger.LlmCanceled:             machine.Fire(VoiceSessionMachineTrigger.LlmCanceled);             break;
-                    case VoiceSessionMachineTrigger.UserInterrupted:         machine.Fire(VoiceSessionMachineTrigger.UserInterrupted);         break;
-                }
+                machine.Fire(trigger);
+                transitioned = machine.IsDirty;
             },
             TimeSpan.FromSeconds(2),
             null
         );
+        return transitioned;
     }
-    
-    private void StartSilenceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime)
-    {
-        CancelTimer(ref runtime.SilenceTimerCts);
-        var cts = new CancellationTokenSource();
-        runtime.SilenceTimerCts = cts;
 
-        _ = Task.Delay(delayMs, cts.Token).ContinueWith(async t =>
+    private void StartSessionTimer(
+        SessionTimer timer,
+        string sessionId,
+        ulong guildId,
+        int delayMs,
+        VoiceSessionMachineTrigger trigger,
+        LlmContextReason reason)
+    {
+        timer.Start(delayMs, async () =>
         {
-            if (t.IsCanceled) return;
             try
             {
-                await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.SilenceThresholdReached);
-                if (_orchestrator != null)
-                    await _orchestrator.TriggerAsync(sessionId, guildId, LlmContextReason.UserSilence);
+                var transitioned = await FireConversationTriggerAsync(sessionId, trigger);
+                if (transitioned && _orchestrator != null)
+                    await _orchestrator.TriggerAsync(sessionId, guildId, reason);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error in silence timer callback for session {SessionId}", sessionId);
+                logger.LogError(ex, "Error in {Trigger} timer callback for session {SessionId}", trigger, sessionId);
             }
-        }, TaskScheduler.Default);
+        });
     }
 
-    private void StartGraceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime)
-    {
-        CancelTimer(ref runtime.GraceTimerCts);
-        var cts = new CancellationTokenSource();
-        runtime.GraceTimerCts = cts;
+    private void StartSilenceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime) =>
+        StartSessionTimer(runtime.SilenceTimer, sessionId, guildId, delayMs,
+            VoiceSessionMachineTrigger.SilenceThresholdReached, LlmContextReason.UserSilence);
 
-        _ = Task.Delay(delayMs, cts.Token).ContinueWith(async t =>
-        {
-            if (t.IsCanceled) return;
-            try
-            {
-                await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.UserJoinedGraceExpired);
-                if (_orchestrator != null)
-                    await _orchestrator.TriggerAsync(sessionId, guildId, LlmContextReason.UserJoined);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error in grace timer callback for session {SessionId}", sessionId);
-            }
-        }, TaskScheduler.Default);
-    }
+    private void StartRambleTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime) =>
+        StartSessionTimer(runtime.RambleTimer, sessionId, guildId, delayMs,
+            VoiceSessionMachineTrigger.RambleThresholdReached, LlmContextReason.Ramble);
 
-    private static void CancelTimer(ref CancellationTokenSource? cts)
+    private void StartGraceTimer(string sessionId, ulong guildId, int delayMs, SessionRuntimeState runtime) =>
+        StartSessionTimer(runtime.GraceTimer, sessionId, guildId, delayMs,
+            VoiceSessionMachineTrigger.UserJoinedGraceExpired, LlmContextReason.UserJoined);
+
+    public async Task StartRambleTimerIfEnabledAsync(string sessionId, ulong guildId)
     {
-        var existing = Interlocked.Exchange(ref cts, null);
-        if (existing == null) return;
-        existing.Cancel();
-        existing.Dispose();
+        var settings = await settingsService.GetSettingsAsync(guildId);
+        if (!settings.RambleModeEnabled) return;
+
+        var runtime = _runtimeStates.GetOrAdd(sessionId, _ => new SessionRuntimeState());
+        runtime.GuildId = guildId;
+        StartRambleTimer(sessionId, guildId, settings.RambleThresholdMs, runtime);
+        logger.LogDebug("[Ramble] Session {SessionId} - ramble timer started ({ThresholdMs}ms)", sessionId, settings.RambleThresholdMs);
     }
 
     private void CancelSessionTimers(string sessionId)
     {
         if (!_runtimeStates.TryGetValue(sessionId, out var runtime)) return;
-        CancelTimer(ref runtime.SilenceTimerCts);
-        CancelTimer(ref runtime.GraceTimerCts);
+        runtime.SilenceTimer.Cancel();
+        runtime.GraceTimer.Cancel();
+        runtime.RambleTimer.Cancel();
     }
 }

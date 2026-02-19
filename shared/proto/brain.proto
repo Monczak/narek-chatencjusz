@@ -189,6 +189,7 @@ message GuildLlmConfig {
   optional string ramble_system_hint = 9;
   optional string time_zone = 10;
   optional string model_name = 11;
+  optional float repetition_penalty = 12;
 }
 
 message GetGuildSettingsRequest {

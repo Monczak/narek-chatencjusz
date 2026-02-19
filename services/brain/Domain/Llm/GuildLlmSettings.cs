@@ -27,6 +27,7 @@ public class GuildLlmSettings
     public string? ModelName { get; set; }
     
     public float? Temperature { get; set; }
+    public float? RepetitionPenalty {  get; set; }
     public int? MaxTokens { get; set; }
     public int? ContextWindow { get; set; }
 
@@ -52,6 +53,7 @@ public class ResolvedLlmSettings
     public string ProviderUrl { get; set; } = "";
     public string? ModelName { get; set; }
     public float Temperature { get; set; }
+    public float RepetitionPenalty { get; set; }
     public int MaxTokens { get; set; }
     public int ContextWindow { get; set; }
     public int SilenceThresholdMs { get; set; }

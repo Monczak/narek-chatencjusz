@@ -48,6 +48,12 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
         if (request.Tools is { Count: > 0 })
             options.Tools = [.. request.Tools];
 
+        if (request.Settings.RepetitionPenalty.HasValue)
+        {
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["repeat_penalty"] = request.Settings.RepetitionPenalty.Value;
+        }
+
         logger.LogDebug("[LLM] Sending {Count} tool(s) to model {Model}: {Names}",
             options.Tools?.Count ?? 0,
             modelName,

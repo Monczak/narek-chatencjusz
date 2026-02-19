@@ -62,6 +62,12 @@ public class LlmOrchestrator(
                 logger.LogWarning("Session {SessionId} not found for LLM trigger", sessionId);
                 return;
             }
+            
+            if (state.MachineState is VoiceSessionMachineState.Ended or VoiceSessionMachineState.Unstable)
+            {
+                logger.LogWarning("[LLM] Session {SessionId} is {State} - skipping LLM trigger", sessionId, state.MachineState);
+                return;
+            }
 
             var pending = _sessionService.DrainPendingEvents(sessionId);
 
@@ -148,9 +154,16 @@ public class LlmOrchestrator(
 
             logger.LogInformation("[LLM] Session {SessionId} - {Chars} chars in {Ms}ms ({Tools} tool call(s))",
                 sessionId, accumulated.Length, sw.ElapsedMilliseconds, observedToolCalls.Count);
+            
+            if (reason == LlmContextReason.Ramble && accumulated.Length < settings.RambleMinResponseLength)
+            {
+                logger.LogInformation("[LLM] Session {SessionId} - ramble response too short ({Chars} chars < {Min}), bot chose silence",
+                    sessionId, accumulated.Length, settings.RambleMinResponseLength);
+            }
 
             await _sessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmResponseCompleted);
+            await _sessionService.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         catch (OperationCanceledException)
         {
@@ -162,6 +175,7 @@ public class LlmOrchestrator(
 
             await _sessionService!.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmCanceled);
+            await _sessionService!.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         catch (Exception ex)
         {
@@ -169,6 +183,7 @@ public class LlmOrchestrator(
 
             await _sessionService!.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmCanceled);
+            await _sessionService!.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         finally
         {

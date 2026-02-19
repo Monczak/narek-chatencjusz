@@ -7,11 +7,11 @@ from services.response import ResponseService
 from generated import brain_pb2
 
 class ConfigCog(commands.Cog):
-    config_group  = discord.SlashCommandGroup("config", "Configure Narek Chatencjusz for this server")
-    prompt_group  = config_group.create_subgroup("prompt", "Manage the system prompt / character card")
-    inst_group    = config_group.create_subgroup("instructions", "Manage custom instructions appended to the prompt")
-    ramble_group  = config_group.create_subgroup("ramble", "Configure ramble (unprompted speech) mode")
-    model_group   = config_group.create_subgroup("model", "Configure the Ollama model for this server")
+    config_group = discord.SlashCommandGroup("config", "Configure Narek Chatencjusz for this server")
+    prompt_group = config_group.create_subgroup("prompt", "Manage the system prompt / character card")
+    inst_group   = config_group.create_subgroup("instructions", "Manage custom instructions appended to the prompt")
+    ramble_group = config_group.create_subgroup("ramble", "Configure ramble (unprompted speech) mode")
+    model_group  = config_group.create_subgroup("model", "Configure the Ollama model for this server")
 
     def __init__(self, bot: discord.Bot, config_service: ConfigService, response_service: ResponseService) -> None:
         self.bot = bot
@@ -62,6 +62,20 @@ class ConfigCog(commands.Cog):
             await self.response.respond_success(ctx, "Temperature updated", f"Temperature set to **{value}**.", ephemeral=True)
         except Exception as e:
             logging.error("config temperature failed: %s", e)
+            await self.response.respond_error(ctx, "Failed to update settings.", ephemeral=True)
+
+    @config_group.command(name="repetition-penalty", description="Set the LLM repetition penalty (1.0 - 2.0)")
+    async def config_repetition_penalty(
+        self,
+        ctx: discord.ApplicationContext,
+        value: discord.Option(float, "Repetition penalty value between 1.0 and 2.0", min_value=1.0, max_value=2.0),  # type: ignore
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        try:
+            await self.config.set_repetition_penalty(ctx.guild_id, value)  # type: ignore
+            await self.response.respond_success(ctx, "Repetition penalty updated", f"Repetition penalty set to **{value}**.", ephemeral=True)
+        except Exception as e:
+            logging.error("config repetition-penalty failed: %s", e)
             await self.response.respond_error(ctx, "Failed to update settings.", ephemeral=True)
 
     # Silence threshold
@@ -204,10 +218,12 @@ def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: 
 
     embed.add_field(name="Bot Name", value=field("Bot Name", r.bot_name, o.bot_name if o.HasField("bot_name") else None), inline=True)
     embed.add_field(name="Temperature", value=f"{r.temperature:.2f}", inline=True)
+    embed.add_field(name="Repetition Penalty", value=f"{r.repetition_penalty:.2f}", inline=True)
     embed.add_field(name="Max Tokens", value=str(r.max_tokens), inline=True)
     embed.add_field(name="Model", value=r.model_name or "*(server default)*", inline=True)
     embed.add_field(name="Silence Threshold", value=f"{r.silence_threshold_ms} ms", inline=True)
     embed.add_field(name="Ramble Mode", value="Enabled" if r.ramble_mode_enabled else "Disabled", inline=True)
+    embed.add_field(name="Ramble Threshold", value=f"{r.ramble_threshold_ms // 1000} s", inline=True)
     embed.add_field(name="Time Zone", value=r.time_zone or "UTC", inline=True)
 
     if available_models:
@@ -215,6 +231,6 @@ def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: 
 
     if r.system_prompt:
         preview = r.system_prompt[:200] + "..." if len(r.system_prompt) > 200 else r.system_prompt
-        embed.add_field(name="System Prompt", value=f"> {preview}", inline=False)
+        embed.add_field(name="System Prompt", value=f">>> {preview}", inline=False)
 
     return embed

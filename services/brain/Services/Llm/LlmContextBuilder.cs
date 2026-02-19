@@ -85,6 +85,7 @@ public partial class LlmContextBuilder(
             Settings: new LlmGenerationSettings(
                 ModelName: settings.ModelName,
                 Temperature: settings.Temperature,
+                RepetitionPenalty: settings.RepetitionPenalty,
                 MaxTokens: settings.MaxTokens
             ),
             Tools: [.. toolRegistry.AIFunctions]

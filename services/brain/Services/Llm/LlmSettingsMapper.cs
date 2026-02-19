@@ -208,6 +208,17 @@ public static class LlmSettingsMapper
             setResolved:  (r, v) => r.Temperature = v,
             readDefault:  (sec, _, _) => sec.GetValue("Temperature", 0.8f)
         ),
+        new ValueField<float>(
+            protoName:    "repetition_penalty",
+            hasInProto:   p => p.HasRepetitionPenalty,
+            fromProto:    p => p.RepetitionPenalty,
+            toProto:      (p, v) => p.RepetitionPenalty = v,
+            fromOverride: s => s.RepetitionPenalty,
+            setOverride:  (s, v) => s.RepetitionPenalty = v,
+            fromResolved: r => r.RepetitionPenalty,
+            setResolved:  (r, v) => r.RepetitionPenalty = v,
+            readDefault:  (sec, _, _) => sec.GetValue("RepetitionPenalty", 0f)
+        ),
 
         // -- Int fields --
 

@@ -32,6 +32,9 @@ class ConfigService:
 
     async def set_temperature(self, guild_id: int, value: float) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._patch(guild_id, temperature=value)
+    
+    async def set_repetition_penalty(self, guild_id: int, value: float) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, repetition_penalty=value)
 
     async def set_silence_threshold(self, guild_id: int, ms: int) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._patch(guild_id, silence_threshold_ms=ms)
