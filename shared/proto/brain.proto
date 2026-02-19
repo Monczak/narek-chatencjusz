@@ -20,6 +20,10 @@ service Brain {
   rpc GetGuildSettings (GetGuildSettingsRequest) returns (GetGuildSettingsResponse);
   rpc UpdateGuildSettings (UpdateGuildSettingsRequest) returns (UpdateGuildSettingsResponse);
   rpc GetAvailableModels (GetAvailableModelsRequest) returns (GetAvailableModelsResponse);
+
+  // Global bot node configuration
+  rpc GetBotSettings (GetBotSettingsRequest) returns (GetBotSettingsResponse);
+  rpc UpdateBotSettings (UpdateBotSettingsRequest) returns (UpdateBotSettingsResponse);
 }
 
 message GuildContext {
@@ -166,11 +170,14 @@ message ErrorMessage {
   optional string correlation_id = 3;
 }
 
+message RefreshBotConfig {}
+
 message BrainCommand {
   oneof command {
     ConnectVoice connect = 1;
     DisconnectVoice disconnect = 2;
     ErrorMessage error = 3;
+    RefreshBotConfig refresh_bot_config = 4;
   }
 }
 
@@ -219,3 +226,23 @@ message GetAvailableModelsResponse {
   repeated string model_names = 1;
 }
 
+// --- Global Bot Node Configuration ---
+
+// Settings that apply to all bot nodes globally, managed by the Brain.
+message BotNodeConfig {
+  bool skip_silence_check = 1;
+}
+
+message GetBotSettingsRequest {}
+
+message GetBotSettingsResponse {
+  BotNodeConfig config = 1;
+}
+
+message UpdateBotSettingsRequest {
+  BotNodeConfig patch = 1;
+}
+
+message UpdateBotSettingsResponse {
+  bool success = 1;
+}

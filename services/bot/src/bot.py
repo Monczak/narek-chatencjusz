@@ -5,6 +5,7 @@ import logging
 from valkey import Valkey
 
 from services.audio_stream import AudioStreamService
+from services.bot_config import BotConfigService
 from services.event_stream import EventStreamService
 from services.messaging import CommandListener
 from services.voice import VoiceService
@@ -63,6 +64,10 @@ class NarekChatencjuszBot(discord.Bot):
 
         self.voice_service.set_bot(self)
         logging.info("VoiceService linked to bot instance")
+
+        bot_config: BotConfigService = self.command_listener.bot_config
+        await bot_config.refresh()
+        logging.info("BotConfigService initialized")
 
         self.loop.create_task(self.command_listener.start())
         logging.info("CommandListener started")

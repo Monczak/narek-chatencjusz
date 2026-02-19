@@ -3,39 +3,71 @@
 @using BrainService.Domain.Configuration
 @using BrainService.Services.Configuration
 @inject BrainConfigService ConfigService
+@inject BotConfigService BotConfigService
 @inject ISnackbar Snackbar
 
 <MudText Typo="Typo.h4" Class="mb-4">Settings</MudText>
 
-<MudCard>
-    <MudCardHeader>
-        <CardHeaderContent>
-            <MudText Typo="Typo.h5">Voice Activity Detection (VAD)</MudText>
-        </CardHeaderContent>
-    </MudCardHeader>
-    <MudCardContent>
-        <MudGrid>
-            <MudItem xs="12" sm="6">
-                <MudSlider @bind-Value="_config.Vad.StartThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Success">Start Threshold: @_config.Vad.StartThreshold</MudSlider>
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudSlider @bind-Value="_config.Vad.StopThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Error">Stop Threshold: @_config.Vad.StopThreshold</MudSlider>
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudNumericField @bind-Value="_config.Vad.SilenceDurationMs" Label="Silence Duration (ms)" Variant="Variant.Outlined" />
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudNumericField @bind-Value="_config.Vad.PreBufferFrameCount" Label="Pre Buffer Frame Count" Variant="Variant.Outlined" />
-            </MudItem>
-        </MudGrid>
-    </MudCardContent>
-    <MudCardActions>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(async () => await Save())">Save Configuration</MudButton>
-    </MudCardActions>
-</MudCard>
+<MudGrid>
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h5">Voice Activity Detection (VAD)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudSlider @bind-Value="_config.Vad.StartThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Success">Start Threshold: @_config.Vad.StartThreshold</MudSlider>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSlider @bind-Value="_config.Vad.StopThreshold" Min="0" Max="1" Step="0.05f" Color="Color.Error">Stop Threshold: @_config.Vad.StopThreshold</MudSlider>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_config.Vad.SilenceDurationMs" Label="Silence Duration (ms)" Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_config.Vad.PreBufferFrameCount" Label="Pre Buffer Frame Count" Variant="Variant.Outlined" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(async () => await SaveVad())">Save Configuration</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+    
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h5">Bot Node Settings</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12">
+                        <MudSwitch @bind-Value="_botConfig.SkipSilenceCheck" Color="Color.Primary"
+                                   Label="Skip Silence Check (continuous RTP stream)" />
+                        <MudText Typo="Typo.body2" Class="mt-1" Style="color: var(--mud-palette-text-secondary)">
+                            When enabled, bot nodes stream silence frames to Discord continuously instead of
+                            suppressing them. Prevents audio dropouts and SSRC staleness when users rejoin the
+                            channel, at the cost of constant Discord bandwidth usage while connected.
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(async () => await SaveBotSettings())">Save Bot Settings</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
 
 @code {
     private BrainConfig _config = new();
+    private BotNodeConfig _botConfig = new();
 
     protected override void OnInitialized()
     {
@@ -43,11 +75,21 @@
         var current = ConfigService.Current;
         _config = JsonSerializer.Deserialize<BrainConfig>(
             JsonSerializer.Serialize(current)) ?? new BrainConfig();
+        
+        var currentBot = BotConfigService.Current;
+        _botConfig = JsonSerializer.Deserialize<BotNodeConfig>(
+            JsonSerializer.Serialize(currentBot)) ?? new BotNodeConfig();
     }
 
-    private async Task Save()
+    private async Task SaveVad()
     {
         await ConfigService.UpdateConfigAsync(_config);
         Snackbar.Add("Configuration saved and propagated.", Severity.Success);
+    }
+    
+    private async Task SaveBotSettings()
+    {
+        await BotConfigService.UpdateConfigAsync(_botConfig);
+        Snackbar.Add("Bot settings saved and propagated to all nodes.", Severity.Success);
     }
 }

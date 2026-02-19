@@ -1,6 +1,7 @@
 using BrainService.Domain.Llm;
 using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
+using BrainService.Services.Configuration;
 using BrainService.Services.Llm;
 using BrainService.Services.Session;
 using Grpc.Core;
@@ -15,6 +16,7 @@ public class BrainGrpcService(
     AudioGraphFactory audioGraphFactory,
     GuildSettingsService guildSettingsService,
     OllamaModelService ollamaModelService,
+    BotConfigService botConfigService,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -227,5 +229,31 @@ public class BrainGrpcService(
         var response = new GetAvailableModelsResponse();
         response.ModelNames.AddRange(models);
         return response;
+    }
+    
+    public override Task<GetBotSettingsResponse> GetBotSettings(
+        GetBotSettingsRequest request,
+        ServerCallContext context)
+    {
+        var cfg = botConfigService.Current;
+        return Task.FromResult(new GetBotSettingsResponse
+        {
+            Config = new BotNodeConfig { SkipSilenceCheck = cfg.SkipSilenceCheck }
+        });
+    }
+
+    public override async Task<UpdateBotSettingsResponse> UpdateBotSettings(
+        UpdateBotSettingsRequest request,
+        ServerCallContext context)
+    {
+        var updated = new Domain.Configuration.BotNodeConfig
+        {
+            SkipSilenceCheck = request.Patch.SkipSilenceCheck
+        };
+
+        await botConfigService.UpdateConfigAsync(updated);
+        logger.LogInformation("UpdateBotSettings: SkipSilenceCheck={Value}", updated.SkipSilenceCheck);
+
+        return new UpdateBotSettingsResponse { Success = true };
     }
 }

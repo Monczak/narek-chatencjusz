@@ -59,6 +59,7 @@ builder.Services.AddSingleton<SoundboardService>();
 
 // Session / state
 builder.Services.AddSingleton<BrainConfigService>();
+builder.Services.AddSingleton<BotConfigService>();
 builder.Services.AddSingleton<BrainGrpcService>();
 builder.Services.AddSingleton<NodeRegistryService>();
 builder.Services.AddSingleton<CommandPublisher>();

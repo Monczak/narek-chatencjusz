@@ -11,6 +11,7 @@ from cogs.state_manager import StateManager
 from cogs.voice import VoiceCog
 from cogs.config import ConfigCog
 from services.audio_stream import AudioStreamService
+from services.bot_config import BotConfigService
 from services.event_stream import EventStreamService
 from services.interaction import InteractionService
 from services.response import ResponseService
@@ -74,6 +75,11 @@ class Container(containers.DeclarativeContainer):
         brain=brain_stub
     )
 
+    bot_config_service = providers.Singleton(
+        BotConfigService,
+        brain=brain_stub
+    )
+
     interaction_service = providers.Singleton(InteractionService)
 
     response_service = providers.Factory(
@@ -103,7 +109,8 @@ class Container(containers.DeclarativeContainer):
         event_stream=event_stream_service,
         state_service=state_service,
         audio_stream=audio_stream_service,
-        keepalive_service=keepalive_service
+        keepalive_service=keepalive_service,
+        bot_config_service=bot_config_service,
     )
 
     util_cog = providers.Factory(UtilCog, util_service=util_service)
@@ -133,7 +140,8 @@ class Container(containers.DeclarativeContainer):
         CommandListener,
         valkey_client=valkey_binary_client,
         node_id=node_id,
-        voice_service=voice_service
+        voice_service=voice_service,
+        bot_config_service=bot_config_service,
     )
 
     bot = providers.Singleton(

@@ -4,6 +4,7 @@ import logging
 from typing import Tuple
 from generated import brain_pb2, brain_pb2_grpc
 from services.audio_stream import AudioStreamService
+from services.bot_config import BotConfigService
 from services.network_sink import BufferedStreamAudioSink
 from services.state import StateService, VoiceTransitionType
 from services.event_stream import EventStreamService
@@ -22,7 +23,8 @@ class VoiceService:
         event_stream: EventStreamService,
         state_service: StateService,
         audio_stream: AudioStreamService,
-        keepalive_service: VoiceKeepaliveService
+        keepalive_service: VoiceKeepaliveService,
+        bot_config_service: BotConfigService
     ) -> None:
         self.brain = brain_stub
         self.response = response_service
@@ -31,6 +33,7 @@ class VoiceService:
         self.state = state_service
         self.audio_stream = audio_stream
         self.keepalive = keepalive_service
+        self.bot_config = bot_config_service
 
         self.bot: discord.Bot | None = None  # Injected later
 
@@ -236,7 +239,7 @@ class VoiceService:
             if not hasattr(vc, '_custom_speaking'):
                 vc._custom_speaking = False # type: ignore
 
-            if is_silent:
+            if is_silent and not self.bot_config.skip_silence_check:
                 if vc._custom_speaking: # type: ignore
                     if vc._silence_tail > 0: # type: ignore
                         vc._silence_tail -= 1 # type: ignore
@@ -251,7 +254,8 @@ class VoiceService:
                 await vc.ws.speak(discord.SpeakingState.voice)
                 vc._custom_speaking = True # type: ignore
             
-            vc._silence_tail = SILENCE_TAIL_FRAMES # type: ignore
+            if not is_silent:
+                vc._silence_tail = SILENCE_TAIL_FRAMES # type: ignore
 
             vc.send_audio_packet(pcm_data, encode=True)
             
