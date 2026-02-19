@@ -74,14 +74,41 @@
                                         }
                                     }
 
-                                    @if (evt.Type == VoiceSessionEventType.BotResponse && evt.Data.Contains("content"))
+                                    @if (evt.Type == VoiceSessionEventType.BotResponse)
                                     {
-                                        var isPartial = evt.Data.Contains("is_partial") && evt.Data["is_partial"].AsBoolean;
-                                        <MudText Typo="Typo.body2" Class="mt-1"
-                                                 Style="@(isPartial ? "opacity:0.7;font-style:italic" : "")">
-                                            @evt.Data["content"].AsString
-                                            @if (isPartial) { <text> [interrupted]</text> }
-                                        </MudText>
+                                        @if (evt.Data.Contains("content") && !string.IsNullOrWhiteSpace(evt.Data["content"].AsString))
+                                        {
+                                            var isPartial = evt.Data.Contains("is_partial") && evt.Data["is_partial"].AsBoolean;
+                                            <MudText Typo="Typo.body2" Class="mt-1"
+                                                     Style="@(isPartial ? "opacity:0.7;font-style:italic" : "")">
+                                                @evt.Data["content"].AsString
+                                                @if (isPartial) { <text> [interrupted]</text> }
+                                            </MudText>
+                                        }
+
+                                        @if (evt.Data.Contains("tool_calls") && evt.Data["tool_calls"].IsBsonArray)
+                                        {
+                                            <MudStack Spacing="1" Class="mt-2">
+                                                @foreach (var toolVal in evt.Data["tool_calls"].AsBsonArray)
+                                                {
+                                                    var toolDoc = toolVal.AsBsonDocument;
+                                                    var name = toolDoc.Contains("name") ? toolDoc["name"].AsString : "tool";
+                                                    var args = toolDoc.Contains("arguments") ? toolDoc["arguments"].AsString : "{}";
+
+                                                    <MudPaper Class="pa-2 d-flex gap-2 align-center" Elevation="0" Outlined="true" 
+                                                              Style="background-color: var(--mud-palette-background-grey);">
+                                                        <MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Small" Color="Color.Primary" />
+                                                        <div style="min-width: 0;">
+                                                            <MudText Typo="Typo.caption" Style="font-weight:bold">@name</MudText>
+                                                            <MudText Typo="Typo.caption" Style="font-family:monospace; opacity:0.8; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                                @args
+                                                            </MudText>
+                                                        </div>
+                                                    </MudPaper>
+                                                }
+                                            </MudStack>
+                                        }
+
                                         @if (evt.Data.Contains("generation_ms") && evt.Data["generation_ms"].AsInt32 > 0)
                                         {
                                             <MudText Typo="Typo.caption" Color="Color.Secondary">

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Channels;
 using BrainService.Domain.Llm;
@@ -124,7 +125,10 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
                     logger.LogInformation("[LLM] Tool '{Name}' ({CallId}) -> {Result}", fc.Name, fc.CallId, result);
 
                     // Yield to the orchestrator so it can record it in history.
-                    var argsJson = fc.Arguments != null ? JsonSerializer.Serialize(fc.Arguments) : "{}";
+                    var argsJson = fc.Arguments != null 
+                        ? JsonSerializer.Serialize(fc.Arguments, SerializerOptions) 
+                        : "{}";
+                    
                     await writer.WriteAsync(new LlmStreamChunk(
                         null,
                         new LlmToolCall(fc.CallId ?? string.Empty, fc.Name, argsJson),
@@ -189,4 +193,6 @@ public class OllamaLlmProvider(string ollamaUrl, string defaultModel, ILogger<Ol
         };
         return new ChatMessage(role, msg.Content);
     }
+    
+    private static readonly JsonSerializerOptions SerializerOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 }
