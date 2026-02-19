@@ -11,6 +11,8 @@ from services.interaction import InteractionService
 from services.response import ResponseService
 from services.voice_keepalive import VoiceKeepaliveService
 
+SILENCE_TAIL_FRAMES = 5
+
 class VoiceService:
     def __init__(
         self, 
@@ -236,15 +238,21 @@ class VoiceService:
 
             if is_silent:
                 if vc._custom_speaking: # type: ignore
-                    await vc.ws.speak(discord.SpeakingState.none)
-                    vc._custom_speaking = False # type: ignore
+                    if vc._silence_tail > 0: # type: ignore
+                        vc._silence_tail -= 1 # type: ignore
+                        vc.send_audio_packet(b'\xf8\xff\xfe', encode=False)
+                    else:
+                        await vc.ws.speak(discord.SpeakingState.none)
+                        vc._custom_speaking = False # type: ignore
                 return
             
             # If we are starting to speak, notify Discord so rejoining users get the SSRC
             if not vc._custom_speaking: # type: ignore
                 await vc.ws.speak(discord.SpeakingState.voice)
                 vc._custom_speaking = True # type: ignore
-                
+            
+            vc._silence_tail = SILENCE_TAIL_FRAMES # type: ignore
+
             vc.send_audio_packet(pcm_data, encode=True)
             
             self.keepalive.mark_audio_sent(guild_id)
