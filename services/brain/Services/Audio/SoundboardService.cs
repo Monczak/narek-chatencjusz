@@ -13,7 +13,10 @@ public class SoundboardService(IConfiguration config, ILogger<SoundboardService>
     
     private readonly ConcurrentDictionary<string, float[]> _cache = new(StringComparer.OrdinalIgnoreCase);
     
-    private static readonly string[] SupportedByNAudio = [".wav", ".mp3", ".aiff", ".aif", ".ogg"];
+    private static readonly string[] SupportedByNAudio = [".wav", ".aiff", ".aif", ".ogg"];
+    private static readonly HashSet<string> SupportedExtensions = new(
+        [..SupportedByNAudio, ".mp3", ".flac", ".m4a", ".opus", ".webm", ".mp4"],
+        StringComparer.OrdinalIgnoreCase);
 
     public async Task LoadAllAsync(CancellationToken ct = default)
     {
@@ -23,7 +26,10 @@ public class SoundboardService(IConfiguration config, ILogger<SoundboardService>
             return;
         }
 
-        var files = Directory.GetFiles(_samplesDirectory);
+        var files = Directory.GetFiles(_samplesDirectory)
+            // ReSharper disable once PossibleUnintendedLinearSearchInSet
+            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+            .ToArray();
         logger.LogInformation("Soundboard: loading {Count} file(s) from {Dir}", files.Length, _samplesDirectory);
 
         foreach (var file in files)

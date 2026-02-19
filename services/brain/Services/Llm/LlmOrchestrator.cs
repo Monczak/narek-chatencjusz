@@ -15,6 +15,11 @@ public class LlmOrchestrator(
     ILogger<LlmOrchestrator> logger) : ILlmOrchestrationTrigger
 {
     private VoiceSessionService? _sessionService;
+    
+    private VoiceSessionService SessionService =>
+        _sessionService ??
+        throw new InvalidOperationException(
+            $"{nameof(LlmOrchestrator)}.{nameof(SetSessionService)}() must be called before use.");
 
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeCts = new();
     
@@ -37,12 +42,6 @@ public class LlmOrchestrator(
     
     private async Task RunAsync(string sessionId, ulong guildId, LlmContextReason reason)
     {
-        if (_sessionService == null)
-        {
-            logger.LogWarning("LlmOrchestrator has no SessionService - skipping");
-            return;
-        }
-
         Cancel(sessionId);
 
         var cts = new CancellationTokenSource();
@@ -56,7 +55,7 @@ public class LlmOrchestrator(
 
         try
         {
-            var state = await _sessionService.GetSessionStateAsync(sessionId);
+            var state = await SessionService.GetSessionStateAsync(sessionId);
             if (state == null)
             {
                 logger.LogWarning("Session {SessionId} not found for LLM trigger", sessionId);
@@ -69,7 +68,7 @@ public class LlmOrchestrator(
                 return;
             }
 
-            var pending = _sessionService.DrainPendingEvents(sessionId);
+            var pending = SessionService.DrainPendingEvents(sessionId);
 
             var request = await contextBuilder.BuildAsync(state, reason, pending, ct);
             logger.LogInformation("[LLM] Session {SessionId} - context built ({MsgCount} messages)",
@@ -86,7 +85,7 @@ public class LlmOrchestrator(
             };
 
             var firstToken = true;
-            var sentenceCount = 0;
+            var chunkCount = 0;
             
             await foreach (var chunk in provider.StreamCompletionAsync(request, ct))
             {
@@ -113,7 +112,7 @@ public class LlmOrchestrator(
                 if (firstToken)
                 {
                     firstToken = false;
-                    await _sessionService.FireConversationTriggerAsync(
+                    await SessionService.FireConversationTriggerAsync(
                         sessionId, VoiceSessionMachineTrigger.LlmResponseStarted);
 
                     eventId = await historyService.AppendBotResponseAsync(
@@ -122,8 +121,8 @@ public class LlmOrchestrator(
                 }
                 else
                 {
-                    sentenceCount++;
-                    if (sentenceCount % 20 == 0 && eventId != null)
+                    chunkCount++;
+                    if (chunkCount % 20 == 0 && eventId != null)
                     {
                         await historyService.AppendBotResponseAsync(
                             sessionId, accumulated, isPartial: true,
@@ -161,9 +160,8 @@ public class LlmOrchestrator(
                     sessionId, accumulated.Length, settings.RambleMinResponseLength);
             }
 
-            await _sessionService.FireConversationTriggerAsync(
+            await SessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmResponseCompleted);
-            await _sessionService.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         catch (OperationCanceledException)
         {
@@ -173,17 +171,15 @@ public class LlmOrchestrator(
             if (eventId != null)
                 await historyService.MarkBotResponseCanceledAsync(sessionId, eventId, accumulated);
 
-            await _sessionService!.FireConversationTriggerAsync(
+            await SessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmCanceled);
-            await _sessionService!.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "[LLM] Session {SessionId} - unhandled error", sessionId);
 
-            await _sessionService!.FireConversationTriggerAsync(
+            await SessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmCanceled);
-            await _sessionService!.StartRambleTimerIfEnabledAsync(sessionId, guildId);
         }
         finally
         {
