@@ -4,6 +4,7 @@ using BrainService.Services.Audio.Graph;
 using BrainService.Services.Configuration;
 using BrainService.Services.Llm;
 using BrainService.Services.Session;
+using BrainService.Services.Tts;
 using Grpc.Core;
 
 namespace BrainService.Services;
@@ -17,6 +18,7 @@ public class BrainGrpcService(
     GuildSettingsService guildSettingsService,
     OllamaModelService ollamaModelService,
     BotConfigService botConfigService,
+    TtsVoiceRegistry ttsVoiceRegistry,
     IHostApplicationLifetime applicationLifetime
 ) : Brain.BrainBase
 {
@@ -255,5 +257,22 @@ public class BrainGrpcService(
         logger.LogInformation("UpdateBotSettings: SkipSilenceCheck={Value}", updated.SkipSilenceCheck);
 
         return new UpdateBotSettingsResponse { Success = true };
+    }
+    
+    public override Task<GetAvailableVoicesResponse> GetAvailableVoices(
+        GetAvailableVoicesRequest request,
+        ServerCallContext context)
+    {
+        var response = new GetAvailableVoicesResponse();
+        foreach (var voice in ttsVoiceRegistry.Voices)
+        {
+            response.Voices.Add(new TtsVoiceInfo
+            {
+                VoiceId      = voice.VoiceId,
+                DisplayName  = voice.DisplayName,
+                ProviderType = voice.ProviderType.ToString(),
+            });
+        }
+        return Task.FromResult(response);
     }
 }

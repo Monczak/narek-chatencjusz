@@ -180,6 +180,17 @@ public static class LlmSettingsMapper
             setResolved:  (r, v) => r.TimeZone = v ?? "UTC",
             readDefault:  (sec, _, _) => sec["TimeZone"] ?? "UTC"
         ),
+        new StringField(
+            protoName:    "tts_voice_id",
+            hasInProto:   p => p.HasTtsVoiceId,
+            fromProto:    p => p.TtsVoiceId,
+            toProto:      (p, v) => p.TtsVoiceId = v,
+            fromOverride: s => s.TtsVoiceId,
+            setOverride:  (s, v) => s.TtsVoiceId = v,
+            fromResolved: r => r.TtsVoiceId,
+            setResolved:  (r, v) => r.TtsVoiceId = v ?? "UTC",
+            readDefault:  (sec, _, _) => sec["TtsVoiceId"]
+        ),
 
         // -- String fields without proto bindings --
 
@@ -254,6 +265,17 @@ public static class LlmSettingsMapper
             fromResolved: r => r.RambleThresholdMs,
             setResolved:  (r, v) => r.RambleThresholdMs = v,
             readDefault:  (sec, _, _) => sec.GetValue("RambleThresholdMs", 90_000)
+        ),
+        new ValueField<int>(
+            protoName:    "interrupt_threshold_ms",
+            hasInProto:   p => p.HasInterruptThresholdMs,
+            fromProto:    p => p.InterruptThresholdMs,
+            toProto:      (p, v) => p.InterruptThresholdMs = v,
+            fromOverride: s => s.InterruptThresholdMs,
+            setOverride:  (s, v) => s.InterruptThresholdMs = v,
+            fromResolved: r => r.InterruptThresholdMs,
+            setResolved:  (r, v) => r.InterruptThresholdMs = v,
+            readDefault:  (sec, _, _) => sec.GetValue("InterruptThresholdMs", 1000)
         ),
 
         // -- Int fields without proto bindings --

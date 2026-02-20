@@ -20,6 +20,7 @@ service Brain {
   rpc GetGuildSettings (GetGuildSettingsRequest) returns (GetGuildSettingsResponse);
   rpc UpdateGuildSettings (UpdateGuildSettingsRequest) returns (UpdateGuildSettingsResponse);
   rpc GetAvailableModels (GetAvailableModelsRequest) returns (GetAvailableModelsResponse);
+  rpc GetAvailableVoices (GetAvailableVoicesRequest) returns (GetAvailableVoicesResponse);
 
   // Global bot node configuration
   rpc GetBotSettings (GetBotSettingsRequest) returns (GetBotSettingsResponse);
@@ -198,6 +199,8 @@ message GuildLlmConfig {
   optional string model_name = 11;
   optional float repetition_penalty = 12;
   optional bool tools_enabled = 13;
+  optional string tts_voice_id = 14;
+  optional int32 interrupt_threshold_ms = 15;
 }
 
 message GetGuildSettingsRequest {
@@ -224,6 +227,18 @@ message GetAvailableModelsRequest {}
 
 message GetAvailableModelsResponse {
   repeated string model_names = 1;
+}
+
+message GetAvailableVoicesRequest {}
+
+message TtsVoiceInfo {
+  string voice_id = 1;
+  string display_name = 2;
+  string provider_type = 3;
+}
+
+message GetAvailableVoicesResponse {
+  repeated TtsVoiceInfo voices = 1;
 }
 
 // --- Global Bot Node Configuration ---

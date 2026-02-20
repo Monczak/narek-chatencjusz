@@ -90,6 +90,12 @@ public sealed class AudioGraphFactory(
     
     public SoundboardNode? TryGetSoundboard(string sessionId) =>
         _active.TryGetValue(sessionId, out var entry) ? entry.Graph.Soundboard : null;
+    
+    public TtsNode? TryGetTts(string sessionId) =>
+        _active.TryGetValue(sessionId, out var entry) ? entry.Graph.Tts : null;
+
+    public SessionAudioGraph? TryGetGraph(string sessionId) =>
+        _active.TryGetValue(sessionId, out var entry) ? entry.Graph : null;
 
     public async ValueTask DisposeAsync()
     {

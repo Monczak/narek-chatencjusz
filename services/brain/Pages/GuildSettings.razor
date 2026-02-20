@@ -1,11 +1,14 @@
 @page "/guild-settings"
 @using BrainService.Domain.Llm
+@using BrainService.Domain.Tts
 @using BrainService.Services.Llm
+@using BrainService.Services.Tts
 @using BrainService.Shared.Components.GuildSettings
 @inject GuildSettingsService SettingsService
 @inject OllamaModelService OllamaModelService
 @inject VoiceSessionHistoryService HistoryService
 @inject ISnackbar Snackbar
+@inject TtsVoiceRegistry TtsVoiceRegistry
 
 <MudText Typo="Typo.h4" Class="mb-4">Guild LLM Settings</MudText>
 
@@ -56,6 +59,10 @@
         <MudItem xs="12">
             <GuildModelCard Edit="@_edit" Defaults="@_defaults" AvailableModels="@_availableModels" />
         </MudItem>
+        
+        <MudItem xs="12">
+            <GuildTtsCard Edit="@_edit" Defaults="@_defaults" AvailableVoices="@_availableVoices" />
+        </MudItem>
 
         <MudItem xs="12">
             <GuildGenerationCard Edit="@_edit" Defaults="@_defaults" />
@@ -77,6 +84,7 @@
 @code {
     private List<(long GuildId, string GuildName)> _knownGuilds = [];
     private List<string> _availableModels = [];
+    private List<TtsVoiceDefinition> _availableVoices = [];
 
     private ulong? _selectedGuildId;
 
@@ -89,6 +97,8 @@
     {
         _knownGuilds = await HistoryService.GetKnownGuildsAsync();
         _defaults = SettingsService.GetDefaults();
+        
+        _availableVoices = TtsVoiceRegistry.Voices.ToList();
 
         try
         {
@@ -190,5 +200,6 @@
         EnabledTools            = s.EnabledTools,
         ToolsEnabled            = s.ToolsEnabled,
         TimeZone                = s.TimeZone,
+        TtsVoiceId              = s.TtsVoiceId,
     };
 }

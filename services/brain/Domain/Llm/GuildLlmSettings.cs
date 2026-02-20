@@ -43,6 +43,9 @@ public class GuildLlmSettings
     public bool? ToolsEnabled { get; set; }
     
     public string? TimeZone { get; set; }
+    
+    public string? TtsVoiceId { get; set; }
+    public int? InterruptThresholdMs { get; set; }
 }
 
 public class ResolvedLlmSettings
@@ -67,4 +70,6 @@ public class ResolvedLlmSettings
     public bool ToolsEnabled { get; set; }
     public string ToolGuidance { get; set; } = "";
     public string TimeZone { get; set; } = "UTC";
+    public string? TtsVoiceId { get; set; }
+    public int InterruptThresholdMs { get; set; }
 }

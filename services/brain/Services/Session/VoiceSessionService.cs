@@ -5,6 +5,7 @@ using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
 using BrainService.Proto.Brain;
+using BrainService.Services.Audio.Graph;
 using BrainService.Services.Llm;
 using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
@@ -20,6 +21,7 @@ public class VoiceSessionService(
     NodeRegistryService nodeRegistry,
     VoiceSessionHistoryService historyService,
     GuildSettingsService settingsService,
+    AudioGraphFactory audioGraphFactory,
     IHubContext<DashboardHub> hubContext
 ) 
 {
@@ -287,8 +289,31 @@ public class VoiceSessionService(
     
     private async Task HandleInterruptionAsync(string sessionId)
     {
-        // Phase 8: read TTS playback queue depth here and apply
-        // InterruptThresholdMs before deciding to cancel.
+        if (!_runtimeStates.TryGetValue(sessionId, out var runtime)) return;
+
+        var ttsNode = audioGraphFactory.TryGetTts(sessionId);
+
+        if (ttsNode is { QueueDepth: > 0 })
+        {
+            var settings = await settingsService.GetSettingsAsync(runtime.GuildId);
+            var remainingMs = ttsNode.QueueDepth * 20; // each frame = 20 ms
+            var thresholdMs = settings.InterruptThresholdMs;
+
+            if (remainingMs < thresholdMs)
+            {
+                // Close to the end - not worth cutting off; let TTS finish naturally
+                logger.LogDebug(
+                    "[Interrupt] Session {SessionId} - {Ms}ms remaining < threshold {ThresholdMs}ms, ignoring interrupt",
+                    sessionId, remainingMs, thresholdMs);
+                return;
+            }
+
+            // Flush TTS queue - soundboard is NOT touched (not interruptible)
+            logger.LogInformation(
+                "[Interrupt] Session {SessionId} - flushing TTS ({Ms}ms remaining)", sessionId, remainingMs);
+            ttsNode.Flush();
+        }
+
         _orchestrator?.Cancel(sessionId);
         await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.UserInterrupted);
     }

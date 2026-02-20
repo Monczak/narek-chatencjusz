@@ -1,0 +1,52 @@
+@using BrainService.Domain.Llm
+@using BrainService.Domain.Tts
+@using BrainService.Shared.Components.Utils
+
+<MudCard>
+    <MudCardHeader>
+        <CardHeaderContent><MudText Typo="Typo.h6">Text-to-Speech</MudText></CardHeaderContent>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="TTS Voice"
+                               IsOverridden="@(Edit.TtsVoiceId != null)"
+                               IsOverriddenChanged="v => { Edit.TtsVoiceId = !v ? null : string.Empty; }"
+                               DefaultHint="@(Defaults.TtsVoiceId ?? "None (TTS disabled)")">
+                    @if (AvailableVoices.Count > 0)
+                    {
+                        <MudSelect @bind-Value="Edit.TtsVoiceId"
+                                   Variant="Variant.Outlined"
+                                   Placeholder="@(Defaults.TtsVoiceId ?? "Select a voice...")">
+                            <MudSelectItem T="string?" Value="@((string?)null)">
+                                <em>None (disable TTS)</em>
+                            </MudSelectItem>
+                            @foreach (var voice in AvailableVoices)
+                            {
+                                <MudSelectItem T="string?" Value="@voice.VoiceId">
+                                    @voice.DisplayName
+                                    <MudText Typo="Typo.caption" Class="ml-2" Color="Color.Secondary">
+                                        (@voice.ProviderType.ToString())
+                                    </MudText>
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                    else
+                    {
+                        <MudTextField @bind-Value="Edit.TtsVoiceId"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="Voice ID (no voices configured in appsettings.json)"
+                                      HelperText="Add voices under Tts:Voices in appsettings.json." />
+                    }
+                </OverrideField>
+            </MudItem>
+        </MudGrid>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+    [Parameter] public List<TtsVoiceDefinition> AvailableVoices { get; set; } = [];
+}

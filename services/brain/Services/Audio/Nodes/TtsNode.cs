@@ -1,12 +1,13 @@
 using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using BrainService.Domain.Audio;
 
 namespace BrainService.Services.Audio.Nodes;
 
-public class SoundboardNode
+public class TtsNode
 {
-    private readonly Channel<AudioFrame> _channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(2000)
+    private readonly Channel<AudioFrame> _channel = Channel.CreateBounded<AudioFrame>(new BoundedChannelOptions(4000)
     {
         FullMode = BoundedChannelFullMode.DropOldest,
     });
@@ -14,12 +15,11 @@ public class SoundboardNode
     private const int FrameSamples = 1920; // 20 ms stereo 48 kHz float
 
     public ChannelReader<AudioFrame> Output => _channel.Reader;
-    public int QueueDepth => Output.Count;
     
-    public bool Enqueue(float[] samples)
-    {
-        var anyDropped = false;
+    public int QueueDepth => _channel.Reader.Count;
 
+    public void Enqueue(float[] samples)
+    {
         for (var offset = 0; offset < samples.Length; offset += FrameSamples)
         {
             var frameLen = Math.Min(FrameSamples, samples.Length - offset);
@@ -29,17 +29,21 @@ public class SoundboardNode
 
             var frame = new AudioFrame
             {
-                Samples = buf.AsMemory(0, FrameSamples),
+                Samples   = buf.AsMemory(0, FrameSamples),
                 Timestamp = DateTime.UtcNow,
             };
 
             if (!_channel.Writer.TryWrite(frame))
-            {
                 ArrayPool<float>.Shared.Return(buf);
-                anyDropped = true;
-            }
         }
-        
-        return !anyDropped;
+    }
+    
+    public void Flush()
+    {
+        while (_channel.Reader.TryRead(out var frame))
+        {
+            if (MemoryMarshal.TryGetArray(frame.Samples, out var seg) && seg.Array != null)
+                ArrayPool<float>.Shared.Return(seg.Array);
+        }
     }
 }

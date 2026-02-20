@@ -32,6 +32,7 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     private readonly IHubContext<DashboardHub> _hubContext;
 
     public SoundboardNode Soundboard { get; } = new();
+    public TtsNode Tts { get; } = new();
     
     private readonly MixerNode _mixer;
     private readonly CancellationTokenSource _cts = new();
@@ -73,6 +74,7 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         _mixer = new MixerNode(loggerFactory.CreateLogger<MixerNode>());
         
         _mixer.AddInput("bot_soundboard", Soundboard.Output);
+        _mixer.AddInput("bot_tts", Tts.Output);
 
         _graphCt = _cts.Token;
     }
@@ -173,7 +175,8 @@ public sealed class SessionAudioGraph : IAsyncDisposable
     {
         var nodeMetrics = new List<DspNodeMetrics>
         {
-            new("Mixer", _mixer.Output.Count)
+            new("Mixer", _mixer.Output.Count),
+            new("TTS", Tts.QueueDepth),
         };
 
         foreach (var (userId, pipeline) in _pipelines)

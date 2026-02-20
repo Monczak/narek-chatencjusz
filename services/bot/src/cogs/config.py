@@ -13,6 +13,7 @@ class ConfigCog(commands.Cog):
     ramble_group = config_group.create_subgroup("ramble", "Configure ramble (unprompted speech) mode")
     model_group  = config_group.create_subgroup("model", "Configure the Ollama model for this server")
     tools_group  = config_group.create_subgroup("tools", "Configure which tools the bot can use")
+    voice_group  = config_group.create_subgroup("voice", "Configure text-to-speech voice for this server")
 
     def __init__(self, bot: discord.Bot, config_service: ConfigService, response_service: ResponseService) -> None:
         self.bot = bot
@@ -223,6 +224,45 @@ class ConfigCog(commands.Cog):
             logging.error("tools toggle failed: %s", e)
             await self.response.respond_error(ctx, "Failed to update tool calling setting.", ephemeral=True)
 
+    # Voice
+
+    @voice_group.command(name="list", description="List all available TTS voices configured on this server")
+    async def voice_list(self, ctx: discord.ApplicationContext) -> None:
+        await ctx.defer(ephemeral=True)
+        try:
+            voices = await self.config.list_voices()
+            if not voices:
+                await self.response.respond_success(ctx, "Available TTS Voices", "No voices are configured. Add voices under `Tts:Voices` in appsettings.json.", ephemeral=True)
+                return
+            lines = [f"`{v.voice_id}` - **{v.display_name}** ({v.provider_type})" for v in voices]
+            await self.response.respond_success(ctx, "Available TTS Voices", "\n".join(lines), ephemeral=True)
+        except Exception as e:
+            logging.error("voice list failed: %s", e)
+            await self.response.respond_error(ctx, "Failed to fetch available voices.", ephemeral=True)
+
+    @voice_group.command(name="set", description="Set the TTS voice for this server")
+    async def voice_set(
+        self,
+        ctx: discord.ApplicationContext,
+        voice_id: discord.Option(str, "Voice ID (use /config voice list to see options)"),  # type: ignore
+    ) -> None:
+        await ctx.defer(ephemeral=True)
+        try:
+            await self.config.set_tts_voice(ctx.guild_id, voice_id)  # type: ignore
+            await self.response.respond_success(ctx, "TTS voice updated", f"TTS voice set to `{voice_id}`.", ephemeral=True)
+        except Exception as e:
+            logging.error("voice set failed: %s", e)
+            await self.response.respond_error(ctx, "Failed to update TTS voice.", ephemeral=True)
+
+    @voice_group.command(name="clear", description="Remove the TTS voice override (disables TTS for this server)")
+    async def voice_clear(self, ctx: discord.ApplicationContext) -> None:
+        await ctx.defer(ephemeral=True)
+        try:
+            await self.config.clear_tts_voice(ctx.guild_id)  # type: ignore
+            await self.response.respond_success(ctx, "TTS voice cleared", "TTS voice reverted to server default (may disable TTS if no default is set).", ephemeral=True)
+        except Exception as e:
+            logging.error("voice clear failed: %s", e)
+            await self.response.respond_error(ctx, "Failed to clear TTS voice.", ephemeral=True)
 
 def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: list[str]) -> discord.Embed:
     r = resp.resolved
@@ -245,6 +285,7 @@ def _settings_embed(resp: brain_pb2.GetGuildSettingsResponse, available_models: 
     embed.add_field(name="Ramble Threshold", value=f"{r.ramble_threshold_ms // 1000} s", inline=True)
     embed.add_field(name="Time Zone", value=r.time_zone or "UTC", inline=True)
     embed.add_field(name="Tools Enabled", value="Enabled" if r.tools_enabled else "Disabled", inline=True)
+    embed.add_field(name="TTS Voice", value=r.tts_voice_id or "*(none / TTS disabled)*", inline=True)
 
     if available_models:
         embed.add_field(name="Available Models", value="\n".join(f"`{m}`" for m in available_models), inline=False)

@@ -54,6 +54,17 @@ class ConfigService:
     async def set_tools_enabled(self, guild_id: int, enabled: bool) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._patch(guild_id, tools_enabled=enabled)
 
+    async def list_voices(self) -> list[brain_pb2.TtsVoiceInfo]:
+        req = brain_pb2.GetAvailableVoicesRequest()
+        resp = await self.brain.GetAvailableVoices(req)  # type: ignore
+        return list(resp.voices)
+
+    async def set_tts_voice(self, guild_id: int, voice_id: str) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, tts_voice_id=voice_id)
+
+    async def clear_tts_voice(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._clear(guild_id, "tts_voice_id")
+
     async def _patch(self, guild_id: int, **kwargs) -> brain_pb2.UpdateGuildSettingsResponse:
         patch = brain_pb2.GuildLlmConfig(**kwargs)
         req = brain_pb2.UpdateGuildSettingsRequest(guild_id=guild_id, patch=patch)

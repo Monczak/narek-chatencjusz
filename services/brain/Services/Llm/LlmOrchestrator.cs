@@ -12,6 +12,7 @@ public class LlmOrchestrator(
     LlmProviderFactory providerFactory,
     VoiceSessionHistoryService historyService,
     ToolContextAccessor toolContextAccessor,
+    ILlmResponseObserver responseObserver,
     ILogger<LlmOrchestrator> logger) : ILlmOrchestrationTrigger
 {
     private VoiceSessionService? _sessionService;
@@ -112,6 +113,9 @@ public class LlmOrchestrator(
                 if (firstToken)
                 {
                     firstToken = false;
+
+                    await responseObserver.OnResponseStarted(sessionId, guildId, ct);
+
                     await SessionService.FireConversationTriggerAsync(
                         sessionId, VoiceSessionMachineTrigger.LlmResponseStarted);
 
@@ -130,12 +134,16 @@ public class LlmOrchestrator(
                             existingEventId: eventId);
                     }
                 }
+
+                responseObserver.OnTextDelta(sessionId, chunk.TextDelta);
             }
 
+            await responseObserver.OnResponseCompletedAsync(sessionId, ct);
+            
             if (!string.IsNullOrWhiteSpace(accumulated))
             {
                 IReadOnlyList<object>? storedToolCalls = observedToolCalls.Count > 0
-                    ? observedToolCalls.Select(tc => (object)new
+                    ? observedToolCalls.Select(object (tc) => new
                     {
                         id = tc.Id,
                         name = tc.Name,
@@ -168,8 +176,11 @@ public class LlmOrchestrator(
             logger.LogInformation("[LLM] Session {SessionId} - cancelled after {Ms}ms",
                 sessionId, sw.ElapsedMilliseconds);
 
+            var committedText = responseObserver.OnResponseCanceled(sessionId);
+            var storedText = committedText ?? accumulated;
+
             if (eventId != null)
-                await historyService.MarkBotResponseCanceledAsync(sessionId, eventId, accumulated);
+                await historyService.MarkBotResponseCanceledAsync(sessionId, eventId, storedText);
 
             await SessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmCanceled);

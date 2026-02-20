@@ -12,6 +12,7 @@ using BrainService.Services.Llm;
 using BrainService.Services.Llm.Tools;
 using BrainService.Services.Memory;
 using BrainService.Services.Session;
+using BrainService.Services.Tts;
 using Microsoft.Extensions.Logging.Console;
 using MongoDB.Driver;
 using MudBlazor.Services;
@@ -90,6 +91,22 @@ builder.Services.AddSingleton<ToolRegistry>(sp =>
 
 builder.Services.AddSingleton<LlmContextBuilder>();
 builder.Services.AddSingleton<LlmOrchestrator>();
+
+// TTS
+builder.Services.AddSingleton<TtsVoiceRegistry>();
+builder.Services.AddSingleton<SapiTtsProvider>();
+builder.Services.AddSingleton<TtsProviderFactory>();
+
+// Register the real observer only when voices are configured;
+// otherwise use the no-op so the orchestrator needs no null checks.
+builder.Services.AddSingleton<TtsResponseObserver>();
+builder.Services.AddSingleton<ILlmResponseObserver>(sp =>
+{
+   var registry = sp.GetRequiredService<TtsVoiceRegistry>();
+   return registry.Voices.Count > 0
+       ? sp.GetRequiredService<TtsResponseObserver>()
+       : NullLlmResponseObserver.Instance;
+});
 
 // Dashboard
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
