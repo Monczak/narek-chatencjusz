@@ -12,7 +12,7 @@ namespace BrainService.Services.Audio.Graph;
 
 public sealed class AudioGraphFactory(
     UdpAudioServer udpServer,
-    VoiceSessionService sessionService,
+    IServiceProvider serviceProvider,
     BrainConfigService configService,
     SileroVadModelService vadModelService,
     AsrGrpcClient asrClient,
@@ -22,6 +22,7 @@ public sealed class AudioGraphFactory(
     IHubContext<DashboardHub> hubContext) : IAsyncDisposable
 {
     private readonly ILogger<AudioGraphFactory> _logger = loggerFactory.CreateLogger<AudioGraphFactory>();
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
 
     private readonly ConcurrentDictionary<string, (SessionAudioGraph Graph, Task Run, CancellationTokenSource Cts)>
         _active = new();
@@ -41,13 +42,14 @@ public sealed class AudioGraphFactory(
         }
 
         var cts = new CancellationTokenSource();
+        var sessionSvc = _serviceProvider.GetRequiredService<VoiceSessionService>();
         var graph = new SessionAudioGraph(
             guid,
             guildId,
             udpServer,
             configService,
             vadModelService,
-            sessionService,
+            sessionSvc,
             asrClient,
             historyService,
             loggerFactory,

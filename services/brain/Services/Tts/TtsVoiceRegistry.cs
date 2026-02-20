@@ -7,13 +7,9 @@ public class TtsVoiceRegistry
     private readonly Dictionary<string, TtsVoiceDefinition> _voices;
 
     public IReadOnlyList<TtsVoiceDefinition> Voices { get; }
-    public int InterruptThresholdMs { get; }
-    public int SoundboardDrainBufferMs { get; }
 
     public TtsVoiceRegistry(IConfiguration config)
     {
-        InterruptThresholdMs = config.GetValue("Tts:InterruptThresholdMs", 1000);
-        SoundboardDrainBufferMs = config.GetValue("Tts:SoundboardDrainBufferMs", 500);
 
         // IConfiguration.Bind() does not support polymorphic types, so we bind to
         // a flat config record first and then convert to the correct subclass

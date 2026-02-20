@@ -1,9 +1,11 @@
 using System.Text.RegularExpressions;
+using BrainService.Domain.Guild;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Services.Audio;
 using BrainService.Services.Memory;
 using BrainService.Services.Session;
+using BrainService.Services.Guild;
 
 namespace BrainService.Services.Llm;
 
@@ -104,7 +106,7 @@ public partial class LlmContextBuilder(
         return request;
     }
     
-    private static string ApplyTemplates(ResolvedLlmSettings settings, VoiceSessionState sessionState)
+    private static string ApplyTemplates(ResolvedGuildSettings settings, VoiceSessionState sessionState)
     {
         var timeZone = TimeZoneInfo.Utc;
         try { timeZone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZone); }
@@ -122,7 +124,7 @@ public partial class LlmContextBuilder(
     }
     
     private string BuildDynamicContextBlock(
-        ResolvedLlmSettings settings,
+        ResolvedGuildSettings settings,
         VoiceSessionState sessionState,
         IReadOnlyDictionary<string, string> memories)
     {
@@ -235,7 +237,7 @@ public partial class LlmContextBuilder(
         return evt.UserId.HasValue ? $"User {evt.UserId}" : "Unknown User";
     }
 
-    private static string? BuildTriggerHint(LlmContextReason reason, VoiceSessionState sessionState, ResolvedLlmSettings settings) =>
+    private static string? BuildTriggerHint(LlmContextReason reason, VoiceSessionState sessionState, ResolvedGuildSettings settings) =>
         reason switch
         {
             LlmContextReason.UserSilence => null, // No hint needed - normal flow

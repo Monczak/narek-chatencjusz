@@ -1,5 +1,5 @@
 using BrainService;
-using BrainService.Domain.Llm;
+using BrainService.Domain.Guild;
 using BrainService.Hubs;
 using BrainService.Services;
 using BrainService.Services.Asr;
@@ -9,6 +9,7 @@ using BrainService.Services.Audio.Transport;
 using BrainService.Services.Audio.Vad;
 using BrainService.Services.Configuration;
 using BrainService.Services.Llm;
+using BrainService.Services.Guild;
 using BrainService.Services.Llm.Tools;
 using BrainService.Services.Memory;
 using BrainService.Services.Session;
@@ -71,7 +72,7 @@ builder.Services.AddHostedService<StaleConnectionClearer>();
 // LLM
 builder.Services.AddSingleton<GuildSettingsService>();
 
-var ollamaUrl = builder.Configuration.GetValue<string>("Llm:Defaults:ProviderUrl") ?? "http://llm:11434";
+var ollamaUrl = builder.Configuration.GetValue<string>("Guild:Defaults:ProviderUrl") ?? "http://llm:11434";
 builder.Services.AddSingleton(sp => new OllamaModelService(
     ollamaUrl,
     sp.GetRequiredService<IHttpClientFactory>(),

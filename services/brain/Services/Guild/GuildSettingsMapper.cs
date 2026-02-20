@@ -1,9 +1,9 @@
-using BrainService.Domain.Llm;
+using BrainService.Domain.Guild;
 using BrainService.Proto.Brain;
 
-namespace BrainService.Services.Llm;
+namespace BrainService.Services.Guild;
 
-public static class LlmSettingsMapper
+public static class GuildSettingsMapper
 {
     // Field descriptor types
 
@@ -12,57 +12,57 @@ public static class LlmSettingsMapper
         public abstract string ProtoName { get; }
 
         // Proto operations - no-ops by default for non-proto fields.
-        public virtual void ApplyPatch(GuildLlmConfig src, GuildLlmSettings dst) { }
-        public virtual void Clear(GuildLlmSettings dst) { }
-        public virtual void CopyOverrideToProto(GuildLlmSettings src, GuildLlmConfig dst) { }
-        public virtual void CopyResolvedToProto(ResolvedLlmSettings src, GuildLlmConfig dst) { }
+public virtual void ApplyPatch(GuildConfig src, GuildSettings dst) { }
+        public virtual void Clear(GuildSettings dst) { }
+        public virtual void CopyOverrideToProto(GuildSettings src, GuildConfig dst) { }
+        public virtual void CopyResolvedToProto(ResolvedGuildSettings src, GuildConfig dst) { }
 
-        public abstract void Resolve(GuildLlmSettings? src, ResolvedLlmSettings defaults, ResolvedLlmSettings dst);
-        public abstract void ReadDefault(IConfigurationSection section, string systemPrompt, string rambleHint, ResolvedLlmSettings dst);
+        public abstract void Resolve(GuildSettings? src, ResolvedGuildSettings defaults, ResolvedGuildSettings dst);
+        public abstract void ReadDefault(IConfigurationSection section, string systemPrompt, string rambleHint, ResolvedGuildSettings dst);
     }
 
     // String fields
 
     private sealed class StringField(
         string                                                  protoName,
-        Func<GuildLlmConfig, bool>?                             hasInProto,
-        Func<GuildLlmConfig, string>?                           fromProto,
-        Action<GuildLlmConfig, string>?                         toProto,
-        Func<GuildLlmSettings, string?>                         fromOverride,
-        Action<GuildLlmSettings, string?>                       setOverride,
-        Func<ResolvedLlmSettings, string?>                      fromResolved,
-        Action<ResolvedLlmSettings, string?>                    setResolved,
+        Func<GuildConfig, bool>?                             hasInProto,
+        Func<GuildConfig, string>?                           fromProto,
+        Action<GuildConfig, string>?                         toProto,
+        Func<GuildSettings, string?>                         fromOverride,
+        Action<GuildSettings, string?>                       setOverride,
+        Func<ResolvedGuildSettings, string?>                      fromResolved,
+        Action<ResolvedGuildSettings, string?>                    setResolved,
         Func<IConfigurationSection, string, string, string?>    readDefault
     ) : Field
     {
         public override string ProtoName => protoName;
 
-        public override void ApplyPatch(GuildLlmConfig src, GuildLlmSettings dst)
+        public override void ApplyPatch(GuildConfig src, GuildSettings dst)
         {
             if (hasInProto != null && fromProto != null && hasInProto(src))
                 setOverride(dst, fromProto(src));
         }
 
-        public override void Clear(GuildLlmSettings dst) => setOverride(dst, null);
+        public override void Clear(GuildSettings dst) => setOverride(dst, null);
 
-        public override void CopyOverrideToProto(GuildLlmSettings src, GuildLlmConfig dst)
+        public override void CopyOverrideToProto(GuildSettings src, GuildConfig dst)
         {
             if (toProto == null) return;
             var v = fromOverride(src);
             if (v != null) toProto(dst, v);
         }
 
-        public override void CopyResolvedToProto(ResolvedLlmSettings src, GuildLlmConfig dst)
+        public override void CopyResolvedToProto(ResolvedGuildSettings src, GuildConfig dst)
         {
             if (toProto == null) return;
             var v = fromResolved(src);
             if (v != null) toProto(dst, v);
         }
 
-        public override void Resolve(GuildLlmSettings? src, ResolvedLlmSettings defaults, ResolvedLlmSettings dst)
+        public override void Resolve(GuildSettings? src, ResolvedGuildSettings defaults, ResolvedGuildSettings dst)
             => setResolved(dst, (src != null ? fromOverride(src) : null) ?? fromResolved(defaults));
 
-        public override void ReadDefault(IConfigurationSection section, string sp, string rh, ResolvedLlmSettings dst)
+        public override void ReadDefault(IConfigurationSection section, string sp, string rh, ResolvedGuildSettings dst)
             => setResolved(dst, readDefault(section, sp, rh));
     }
 
@@ -70,42 +70,42 @@ public static class LlmSettingsMapper
 
     private sealed class ValueField<T>(
         string                                         protoName,
-        Func<GuildLlmConfig, bool>?                    hasInProto,
-        Func<GuildLlmConfig, T>?                       fromProto,
-        Action<GuildLlmConfig, T>?                     toProto,
-        Func<GuildLlmSettings, T?>                     fromOverride,
-        Action<GuildLlmSettings, T?>                   setOverride,
-        Func<ResolvedLlmSettings, T>                   fromResolved,
-        Action<ResolvedLlmSettings, T>                 setResolved,
+        Func<GuildConfig, bool>?                    hasInProto,
+        Func<GuildConfig, T>?                       fromProto,
+        Action<GuildConfig, T>?                     toProto,
+        Func<GuildSettings, T?>                     fromOverride,
+        Action<GuildSettings, T?>                   setOverride,
+        Func<ResolvedGuildSettings, T>                   fromResolved,
+        Action<ResolvedGuildSettings, T>                 setResolved,
         Func<IConfigurationSection, string, string, T> readDefault
     ) : Field where T : struct
     {
         public override string ProtoName => protoName;
 
-        public override void ApplyPatch(GuildLlmConfig src, GuildLlmSettings dst)
+        public override void ApplyPatch(GuildConfig src, GuildSettings dst)
         {
             if (hasInProto != null && fromProto != null && hasInProto(src))
                 setOverride(dst, fromProto(src));
         }
 
-        public override void Clear(GuildLlmSettings dst) => setOverride(dst, null);
+        public override void Clear(GuildSettings dst) => setOverride(dst, null);
 
-        public override void CopyOverrideToProto(GuildLlmSettings src, GuildLlmConfig dst)
+        public override void CopyOverrideToProto(GuildSettings src, GuildConfig dst)
         {
             if (toProto == null) return;
             var v = fromOverride(src);
             if (v.HasValue) toProto(dst, v.Value);
         }
 
-        public override void CopyResolvedToProto(ResolvedLlmSettings src, GuildLlmConfig dst)
+        public override void CopyResolvedToProto(ResolvedGuildSettings src, GuildConfig dst)
         {
             toProto?.Invoke(dst, fromResolved(src));
         }
 
-        public override void Resolve(GuildLlmSettings? src, ResolvedLlmSettings defaults, ResolvedLlmSettings dst)
+        public override void Resolve(GuildSettings? src, ResolvedGuildSettings defaults, ResolvedGuildSettings dst)
             => setResolved(dst, (src != null ? fromOverride(src) : null) ?? fromResolved(defaults));
 
-        public override void ReadDefault(IConfigurationSection section, string sp, string rh, ResolvedLlmSettings dst)
+        public override void ReadDefault(IConfigurationSection section, string sp, string rh, ResolvedGuildSettings dst)
             => setResolved(dst, readDefault(section, sp, rh));
     }
     
@@ -188,7 +188,7 @@ public static class LlmSettingsMapper
             fromOverride: s => s.TtsVoiceId,
             setOverride:  (s, v) => s.TtsVoiceId = v,
             fromResolved: r => r.TtsVoiceId,
-            setResolved:  (r, v) => r.TtsVoiceId = v ?? "UTC",
+            setResolved:  (r, v) => r.TtsVoiceId = v ?? "sapi-default",
             readDefault:  (sec, _, _) => sec["TtsVoiceId"]
         ),
 
@@ -277,6 +277,17 @@ public static class LlmSettingsMapper
             setResolved:  (r, v) => r.InterruptThresholdMs = v,
             readDefault:  (sec, _, _) => sec.GetValue("InterruptThresholdMs", 1000)
         ),
+        new ValueField<int>(
+            protoName:    "soundboard_drain_buffer_ms",
+            hasInProto:   p => p.HasSoundboardDrainBufferMs,
+            fromProto:    p => p.SoundboardDrainBufferMs,
+            toProto:      (p, v) => p.SoundboardDrainBufferMs = v,
+            fromOverride: s => s.SoundboardDrainBufferMs,
+            setOverride:  (s, v) => s.SoundboardDrainBufferMs = v,
+            fromResolved: r => r.SoundboardDrainBufferMs,
+            setResolved:  (r, v) => r.SoundboardDrainBufferMs = v,
+            readDefault:  (sec, _, _) => sec.GetValue("SoundboardDrainBufferMs", 500)
+        ),
 
         // -- Int fields without proto bindings --
 
@@ -363,13 +374,13 @@ public static class LlmSettingsMapper
             .ToDictionary(f => f.ProtoName));
     
     // Public API
-    public static ResolvedLlmSettings BuildDefaults(
+    public static ResolvedGuildSettings BuildDefaults(
         IConfigurationSection section,
         string systemPrompt,
         string rambleHint,
         string toolGuidance)
     {
-        var dst = new ResolvedLlmSettings();
+        var dst = new ResolvedGuildSettings();
         foreach (var f in Fields)
             f.ReadDefault(section, systemPrompt, rambleHint, dst);
 
@@ -382,9 +393,9 @@ public static class LlmSettingsMapper
         return dst;
     }
     
-    public static ResolvedLlmSettings Resolve(GuildLlmSettings? g, ResolvedLlmSettings defaults)
+    public static ResolvedGuildSettings Resolve(GuildSettings? g, ResolvedGuildSettings defaults)
     {
-        var dst = new ResolvedLlmSettings();
+        var dst = new ResolvedGuildSettings();
         foreach (var f in Fields)
             f.Resolve(g, defaults, dst);
 
@@ -395,23 +406,23 @@ public static class LlmSettingsMapper
         dst.ToolGuidance = defaults.ToolGuidance;
         return dst;
     }
-    public static GuildLlmConfig ToResolvedProto(ResolvedLlmSettings s)
+    public static GuildConfig ToResolvedProto(ResolvedGuildSettings s)
     {
-        var cfg = new GuildLlmConfig();
+        var cfg = new GuildConfig();
         foreach (var f in Fields)
             f.CopyResolvedToProto(s, cfg);
         return cfg;
     }
     
-    public static GuildLlmConfig ToOverrideProto(GuildLlmSettings s)
+    public static GuildConfig ToOverrideProto(GuildSettings s)
     {
-        var cfg = new GuildLlmConfig();
+        var cfg = new GuildConfig();
         foreach (var f in Fields)
             f.CopyOverrideToProto(s, cfg);
         return cfg;
     }
     
-    public static void ApplyPatch(GuildLlmConfig patch, GuildLlmSettings target)
+    public static void ApplyPatch(GuildConfig patch, GuildSettings target)
     {
         foreach (var f in Fields)
             f.ApplyPatch(patch, target);
@@ -419,7 +430,7 @@ public static class LlmSettingsMapper
     
     public static void ApplyClearFields(
         IEnumerable<string> fieldNames,
-        GuildLlmSettings target,
+        GuildSettings target,
         ILogger? logger = null)
     {
         var lookup = ProtoLookup.Value;

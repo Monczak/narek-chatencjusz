@@ -1,4 +1,4 @@
-@using BrainService.Domain.Llm
+@using BrainService.Domain.Guild
 @using BrainService.Domain.Tts
 @using BrainService.Shared.Components.Utils
 
@@ -41,12 +41,32 @@
                     }
                 </OverrideField>
             </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Interrupt Threshold (ms)"
+                               IsOverridden="@(Edit.InterruptThresholdMs != null)"
+                               IsOverriddenChanged="v => { Edit.InterruptThresholdMs = !v ? null : Defaults.InterruptThresholdMs; }"
+                               DefaultHint="@Defaults.InterruptThresholdMs.ToString()">
+                    <MudNumericField @bind-Value="Edit.InterruptThresholdMs"
+                                     Variant="Variant.Outlined"
+                                     Min="0" Max="10000" />
+                </OverrideField>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <OverrideField Label="Soundboard Buffer (ms)"
+                               IsOverridden="@(Edit.SoundboardDrainBufferMs != null)"
+                               IsOverriddenChanged="v => { Edit.SoundboardDrainBufferMs = !v ? null : Defaults.SoundboardDrainBufferMs; }"
+                               DefaultHint="@Defaults.SoundboardDrainBufferMs.ToString()">
+                    <MudNumericField @bind-Value="Edit.SoundboardDrainBufferMs"
+                                     Variant="Variant.Outlined"
+                                     Min="0" Max="2000" />
+                </OverrideField>
+            </MudItem>
         </MudGrid>
     </MudCardContent>
 </MudCard>
 
 @code {
-    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
-    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+    [Parameter, EditorRequired] public GuildSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedGuildSettings Defaults { get; set; } = null!;
     [Parameter] public List<TtsVoiceDefinition> AvailableVoices { get; set; } = [];
 }

@@ -65,8 +65,20 @@ class ConfigService:
     async def clear_tts_voice(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
         return await self._clear(guild_id, "tts_voice_id")
 
+    async def set_interrupt_threshold(self, guild_id: int, ms: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, interrupt_threshold_ms=ms)
+
+    async def clear_interrupt_threshold(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._clear(guild_id, "interrupt_threshold_ms")
+
+    async def set_soundboard_buffer(self, guild_id: int, ms: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._patch(guild_id, soundboard_drain_buffer_ms=ms)
+
+    async def clear_soundboard_buffer(self, guild_id: int) -> brain_pb2.UpdateGuildSettingsResponse:
+        return await self._clear(guild_id, "soundboard_drain_buffer_ms")
+
     async def _patch(self, guild_id: int, **kwargs) -> brain_pb2.UpdateGuildSettingsResponse:
-        patch = brain_pb2.GuildLlmConfig(**kwargs)
+        patch = brain_pb2.GuildConfig(**kwargs)
         req = brain_pb2.UpdateGuildSettingsRequest(guild_id=guild_id, patch=patch)
         try:
             return await self.brain.UpdateGuildSettings(req)  # type: ignore
@@ -77,7 +89,7 @@ class ConfigService:
     async def _clear(self, guild_id: int, *field_names: str) -> brain_pb2.UpdateGuildSettingsResponse:
         req = brain_pb2.UpdateGuildSettingsRequest(
             guild_id=guild_id,
-            patch=brain_pb2.GuildLlmConfig(),
+            patch=brain_pb2.GuildConfig(),
             clear_fields=list(field_names),
         )
         try:

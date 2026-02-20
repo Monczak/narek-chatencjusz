@@ -1,8 +1,9 @@
-using BrainService.Domain.Llm;
+using BrainService.Domain.Guild;
 using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Configuration;
 using BrainService.Services.Llm;
+using BrainService.Services.Guild;
 using BrainService.Services.Session;
 using BrainService.Services.Tts;
 using Grpc.Core;
@@ -201,8 +202,8 @@ public class BrainGrpcService(
 
         return new GetGuildSettingsResponse
         {
-            Resolved  = LlmSettingsMapper.ToResolvedProto(resolved),
-            Overrides = raw is null ? new GuildLlmConfig() : LlmSettingsMapper.ToOverrideProto(raw),
+            Resolved  = GuildSettingsMapper.ToResolvedProto(resolved),
+            Overrides = raw is null ? new GuildConfig() : GuildSettingsMapper.ToOverrideProto(raw),
         };
     }
     
@@ -213,10 +214,10 @@ public class BrainGrpcService(
         var guildId = request.GuildId;
 
         var raw = await guildSettingsService.GetRawSettingsAsync(guildId)
-                  ?? new GuildLlmSettings { GuildId = guildId };
+                  ?? new GuildSettings { GuildId = guildId };
         
-        LlmSettingsMapper.ApplyPatch(request.Patch, raw);
-        LlmSettingsMapper.ApplyClearFields(request.ClearFields, raw, logger);
+        GuildSettingsMapper.ApplyPatch(request.Patch, raw);
+        GuildSettingsMapper.ApplyClearFields(request.ClearFields, raw, logger);
 
         await guildSettingsService.SaveSettingsAsync(raw);
         logger.LogInformation("UpdateGuildSettings applied for guild {GuildId}", guildId);

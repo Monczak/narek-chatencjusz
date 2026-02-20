@@ -185,7 +185,7 @@ message BrainCommand {
 // --- Per-Guild LLM Configuration ---
 
 // All fields are optional; absent means "not overriding the server default".
-message GuildLlmConfig {
+message GuildConfig {
   optional string system_prompt = 1;
   optional string custom_instructions = 2;
   optional string bot_name = 3;
@@ -201,6 +201,7 @@ message GuildLlmConfig {
   optional bool tools_enabled = 13;
   optional string tts_voice_id = 14;
   optional int32 interrupt_threshold_ms = 15;
+  optional int32 soundboard_drain_buffer_ms = 16;
 }
 
 message GetGuildSettingsRequest {
@@ -208,13 +209,13 @@ message GetGuildSettingsRequest {
 }
 
 message GetGuildSettingsResponse {
-  GuildLlmConfig resolved = 1;
-  GuildLlmConfig overrides = 2;
+  GuildConfig resolved = 1;
+  GuildConfig overrides = 2;
 }
 
 message UpdateGuildSettingsRequest {
   uint64 guild_id = 1;
-  GuildLlmConfig patch = 2;
+  GuildConfig patch = 2;
   repeated string clear_fields = 3;
 }
 

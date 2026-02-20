@@ -1,7 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace BrainService.Domain.Llm;
+namespace BrainService.Domain.Guild;
 
 public enum LlmProviderType
 {
@@ -10,7 +10,7 @@ public enum LlmProviderType
 }
 
 [BsonIgnoreExtraElements]
-public class GuildLlmSettings
+public class GuildSettings
 {
     [BsonId]
     [BsonIgnoreIfDefault]
@@ -46,9 +46,10 @@ public class GuildLlmSettings
     
     public string? TtsVoiceId { get; set; }
     public int? InterruptThresholdMs { get; set; }
+    public int? SoundboardDrainBufferMs { get; set; }
 }
 
-public class ResolvedLlmSettings
+public class ResolvedGuildSettings
 {
     public string SystemPrompt { get; set; } = "";
     public string? CustomInstructions { get; set; }
@@ -72,4 +73,5 @@ public class ResolvedLlmSettings
     public string TimeZone { get; set; } = "UTC";
     public string? TtsVoiceId { get; set; }
     public int InterruptThresholdMs { get; set; }
+    public int SoundboardDrainBufferMs { get; set; }
 }

@@ -26,7 +26,10 @@ services:
       - Asr__Url=asr:6060
       - Llm__SystemPromptFile=/app/prompts/system_prompt.txt
       - Llm__RambleHintFile=/app/prompts/ramble_hint.txt
-      - Llm__Defaults__ProviderUrl=http://llm:11434
+      - Llm__ToolGuidanceFile=/app/prompts/tool_guidance.txt
+      - Guild__Defaults__ProviderUrl=http://llm:11434
+      - Tts__Voices__0__ProviderUrl=http://host.docker.internal:12480
+      - Soundboard__SamplesDirectory=/app/soundboard
     ports:
      - "8080:8080"
     restart: unless-stopped
@@ -38,6 +41,8 @@ services:
       - internal
     volumes:
       - brain_models:/app/models
+      - ./prompts:/app/prompts:ro
+      - ./soundboard:/app/soundboard:ro
 
   asr:
     build:

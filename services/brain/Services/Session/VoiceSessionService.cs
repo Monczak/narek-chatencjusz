@@ -1,12 +1,14 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using BrainService.Domain.Discord;
+using BrainService.Domain.Guild;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Hubs;
 using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Llm;
+using BrainService.Services.Guild;
 using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
 using StackExchange.Redis;

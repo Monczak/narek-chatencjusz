@@ -1,27 +1,27 @@
 using System.Collections.Concurrent;
-using BrainService.Domain.Llm;
+using BrainService.Domain.Guild;
 using MongoDB.Driver;
 
-namespace BrainService.Services.Llm;
+namespace BrainService.Services.Guild;
 
 public class GuildSettingsService
 {
-    private readonly IMongoCollection<GuildLlmSettings> _collection;
-    private readonly ResolvedLlmSettings _defaults;
-    private readonly ConcurrentDictionary<ulong, ResolvedLlmSettings> _cache = new();
+    private readonly IMongoCollection<GuildSettings> _collection;
+    private readonly ResolvedGuildSettings _defaults;
+    private readonly ConcurrentDictionary<ulong, ResolvedGuildSettings> _cache = new();
     private readonly ILogger<GuildSettingsService> _logger;
 
     public GuildSettingsService(IMongoDatabase db, IConfiguration config, ILogger<GuildSettingsService> logger)
     {
         _logger = logger;
-        _collection = db.GetCollection<GuildLlmSettings>("guild_llm_settings");
+        _collection = db.GetCollection<GuildSettings>("guild_settings");
         
         var systemPrompt = TryReadPromptFile(config.GetValue<string>("Llm:SystemPromptFile"), DefaultPrompt);
         var rambleHint = TryReadPromptFile(config.GetValue<string>("Llm:RambleHintFile"), DefaultRambleHint);
         var toolGuidance = TryReadPromptFile(config.GetValue<string>("Llm:ToolGuidanceFile"), DefaultToolGuidance);
         
-        _defaults = LlmSettingsMapper.BuildDefaults(
-            config.GetSection("Llm:Defaults"),
+        _defaults = GuildSettingsMapper.BuildDefaults(
+            config.GetSection("Guild:Defaults"),
             systemPrompt,
             rambleHint,
             toolGuidance
@@ -30,41 +30,41 @@ public class GuildSettingsService
         EnsureIndex();
     }
     
-    public async Task<ResolvedLlmSettings> GetSettingsAsync(ulong guildId)
+    public async Task<ResolvedGuildSettings> GetSettingsAsync(ulong guildId)
     {
         if (_cache.TryGetValue(guildId, out var settings))
             return settings;
 
         var @override = await _collection
-            .Find(Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId))
+            .Find(Builders<GuildSettings>.Filter.Eq(s => s.GuildId, guildId))
             .FirstOrDefaultAsync();
 
         // (NEW)
-        var resolved = LlmSettingsMapper.Resolve(@override, _defaults);
+        var resolved = GuildSettingsMapper.Resolve(@override, _defaults);
         // ---
 
         _cache[guildId] = resolved;
         return resolved;
     }
     
-    public async Task<GuildLlmSettings?> GetRawSettingsAsync(ulong guildId)
+    public async Task<GuildSettings?> GetRawSettingsAsync(ulong guildId)
     {
         return await _collection
-            .Find(Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId))
+            .Find(Builders<GuildSettings>.Filter.Eq(s => s.GuildId, guildId))
             .FirstOrDefaultAsync();
     }
 
-    public async Task<IReadOnlyList<GuildLlmSettings>> GetAllRawSettingsAsync()
+    public async Task<IReadOnlyList<GuildSettings>> GetAllRawSettingsAsync()
     {
         return await _collection
-            .Find(Builders<GuildLlmSettings>.Filter.Empty)
+            .Find(Builders<GuildSettings>.Filter.Empty)
             .ToListAsync();
     }
     
-    public async Task SaveSettingsAsync(GuildLlmSettings settings)
+    public async Task SaveSettingsAsync(GuildSettings settings)
     {
         await _collection.ReplaceOneAsync(
-            Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, settings.GuildId),
+            Builders<GuildSettings>.Filter.Eq(s => s.GuildId, settings.GuildId),
             settings,
             new ReplaceOptions { IsUpsert = true }
         );
@@ -75,18 +75,18 @@ public class GuildSettingsService
     public async Task DeleteSettingsAsync(ulong guildId)
     {
         await _collection.DeleteOneAsync(
-            Builders<GuildLlmSettings>.Filter.Eq(s => s.GuildId, guildId));
+            Builders<GuildSettings>.Filter.Eq(s => s.GuildId, guildId));
         _cache.TryRemove(guildId, out _);
         _logger.LogInformation("Deleted LLM settings for {GuildId}", guildId);
     }
 
-    public ResolvedLlmSettings GetDefaults() => _defaults;
+    public ResolvedGuildSettings GetDefaults() => _defaults;
 
     private void EnsureIndex()
     {
         _collection.Indexes.CreateOne(
-            new CreateIndexModel<GuildLlmSettings>(
-                Builders<GuildLlmSettings>.IndexKeys.Ascending(s => s.GuildId),
+            new CreateIndexModel<GuildSettings>(
+                Builders<GuildSettings>.IndexKeys.Ascending(s => s.GuildId),
                 new CreateIndexOptions { Unique = true }));
     }
 

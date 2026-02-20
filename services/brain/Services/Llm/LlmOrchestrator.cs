@@ -3,6 +3,7 @@ using System.Diagnostics;
 using BrainService.Domain.Llm;
 using BrainService.Domain.Session;
 using BrainService.Services.Session;
+using BrainService.Services.Guild;
 
 namespace BrainService.Services.Llm;
 

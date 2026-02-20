@@ -1,6 +1,7 @@
 @page "/guild-settings"
-@using BrainService.Domain.Llm
+@using BrainService.Domain.Guild
 @using BrainService.Domain.Tts
+@using BrainService.Services.Guild
 @using BrainService.Services.Llm
 @using BrainService.Services.Tts
 @using BrainService.Shared.Components.GuildSettings
@@ -88,8 +89,8 @@
 
     private ulong? _selectedGuildId;
 
-    private GuildLlmSettings? _edit;
-    private ResolvedLlmSettings? _defaults;
+    private GuildSettings? _edit;
+    private ResolvedGuildSettings? _defaults;
     private bool _isLoading;
     private bool _isSaving;
 
@@ -131,7 +132,7 @@
             _selectedGuildId = guildId;
             var raw = await SettingsService.GetRawSettingsAsync(guildId);
             _edit = raw is null
-                ? new GuildLlmSettings { GuildId = guildId }
+                ? new GuildSettings { GuildId = guildId }
                 : CloneSettings(raw);
         }
         finally
@@ -168,7 +169,7 @@
         try
         {
             await SettingsService.DeleteSettingsAsync(_selectedGuildId.Value);
-            _edit = new GuildLlmSettings { GuildId = _selectedGuildId.Value };
+            _edit = new GuildSettings { GuildId = _selectedGuildId.Value };
             Snackbar.Add("All overrides cleared - guild is using server defaults.", Severity.Success);
         }
         catch (Exception ex)
@@ -181,7 +182,7 @@
         }
     }
 
-    private static GuildLlmSettings CloneSettings(GuildLlmSettings s) => new()
+    private static GuildSettings CloneSettings(GuildSettings s) => new()
     {
         GuildId                 = s.GuildId,
         SystemPrompt            = s.SystemPrompt,
@@ -201,5 +202,7 @@
         ToolsEnabled            = s.ToolsEnabled,
         TimeZone                = s.TimeZone,
         TtsVoiceId              = s.TtsVoiceId,
+        InterruptThresholdMs    = s.InterruptThresholdMs,
+        SoundboardDrainBufferMs = s.SoundboardDrainBufferMs,
     };
 }

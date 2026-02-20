@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Llm;
+using BrainService.Services.Guild;
 
 namespace BrainService.Services.Tts;
 
@@ -49,7 +50,7 @@ public class TtsResponseObserver(
             soundboard!,
             provider,
             voice,
-            voiceRegistry.SoundboardDrainBufferMs,
+            settings.SoundboardDrainBufferMs,
             logger
         );
 

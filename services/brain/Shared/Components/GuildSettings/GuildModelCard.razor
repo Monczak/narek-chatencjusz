@@ -1,4 +1,4 @@
-@using BrainService.Domain.Llm
+@using BrainService.Domain.Guild
 @using BrainService.Shared.Components.Utils
 
 <MudCard>
@@ -37,7 +37,7 @@
 </MudCard>
 
 @code {
-    [Parameter, EditorRequired] public GuildLlmSettings Edit { get; set; } = null!;
-    [Parameter, EditorRequired] public ResolvedLlmSettings Defaults { get; set; } = null!;
+    [Parameter, EditorRequired] public GuildSettings Edit { get; set; } = null!;
+    [Parameter, EditorRequired] public ResolvedGuildSettings Defaults { get; set; } = null!;
     [Parameter, EditorRequired] public List<string> AvailableModels { get; set; } = [];
 }
