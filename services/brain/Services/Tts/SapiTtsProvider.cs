@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using BrainService.Domain.Tts;
+using NAudio.Dsp;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
@@ -47,15 +48,74 @@ public sealed class SapiTtsProvider(IHttpClientFactory httpClientFactory, ILogge
         logger.LogDebug("[TTS] WAV format: {Rate} Hz, {Channels} ch, {Bits} bit",
             reader.WaveFormat.SampleRate, reader.WaveFormat.Channels, reader.WaveFormat.BitsPerSample);
 
+        var monoFloats = ReadAsMonoFloat(reader);
+
+        float[] resampledFloats;
+        if (reader.WaveFormat.SampleRate == 48000)
+        {
+            resampledFloats = monoFloats;
+        }
+        else
+        {
+            var resampler = new WdlResampler();
+            resampler.SetMode(true, 0, false);
+            resampler.SetFeedMode(true);
+            resampler.SetRates(reader.WaveFormat.SampleRate, 48000);
+
+            var ratio = 48000.0 / reader.WaveFormat.SampleRate;
+            var estimatedOut = (int)(monoFloats.Length * ratio) + 64;
+            resampledFloats = new float[estimatedOut];
+
+            var inOffset = 0;
+            var outOffset = 0;
+
+            while (inOffset < monoFloats.Length)
+            {
+                var inAvail = monoFloats.Length - inOffset;
+                var inConsumed = resampler.ResamplePrepare(inAvail, 1, out var inBuf, out var inBufOffset);
+                Array.Copy(monoFloats, inOffset, inBuf, inBufOffset, inConsumed);
+                inOffset += inConsumed;
+
+                var outAvail = estimatedOut - outOffset;
+                var outProduced = resampler.ResampleOut(resampledFloats, outOffset, inConsumed, outAvail, 1);
+                outOffset += outProduced;
+            }
+
+            // Flush any samples held inside the resampler
+            while (true)
+            {
+                var inConsumed = resampler.ResamplePrepare(0, 1, out var inBuf, out var inBufOffset);
+                if (inConsumed == 0) break;
+                Array.Clear(inBuf, inBufOffset, inConsumed);
+                var outAvail = estimatedOut - outOffset;
+                if (outAvail <= 0) break;
+                var outProduced = resampler.ResampleOut(resampledFloats, outOffset, inConsumed, outAvail, 1);
+                if (outProduced == 0) break;
+                outOffset += outProduced;
+            }
+
+            resampledFloats = resampledFloats[..outOffset];
+        }
+
+        // Mono -> stereo interleave
+        var stereo = new float[resampledFloats.Length * 2];
+        for (var i = 0; i < resampledFloats.Length; i++)
+        {
+            stereo[i * 2]     = resampledFloats[i];
+            stereo[i * 2 + 1] = resampledFloats[i];
+        }
+
+        return stereo;
+    }
+
+    private static float[] ReadAsMonoFloat(WaveFileReader reader)
+    {
         var source = reader.ToSampleProvider();
 
-        if (source.WaveFormat.SampleRate != 48000)
-            source = new WdlResamplingSampleProvider(source, 48000);
+        if (source.WaveFormat.Channels > 1)
+            source = new StereoToMonoSampleProvider(source);
 
-        if (source.WaveFormat.Channels == 1)
-            source = new MonoToStereoSampleProvider(source);
-
-        var samples = new List<float>(48000 * 5 * 2); // pre-allocate ~5 seconds stereo
+        var samples = new List<float>(reader.WaveFormat.SampleRate * 10);
         var buffer = new float[4096];
         int read;
         while ((read = source.Read(buffer, 0, buffer.Length)) > 0)

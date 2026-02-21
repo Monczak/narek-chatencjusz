@@ -77,23 +77,10 @@ public sealed class UserPipeline
             userId,
             loggerFactory.CreateLogger<AsrTapNode>()
         );
-        
-        var resampleUp = new ResamplerNode(
-            asrTap.Output,
-            16000,
-            48000,
-            loggerFactory.CreateLogger<ResamplerNode>()
-        );
-        
-        var monoToStereo = new ChannelConverterNode(
-            resampleUp.Output,
-            monoToStereo: true,
-            loggerFactory.CreateLogger<ChannelConverterNode>()
-        );
-        
-        mixer.AddInput($"user_{userId}", monoToStereo.Output);
 
-        Nodes = [stereoToMono, resampleDown, vad, asrTap, resampleUp, monoToStereo];
+        var blackHole = new BlackHoleNode(asrTap.Output);
+
+        Nodes = [stereoToMono, resampleDown, vad, asrTap, blackHole];
     }
 
     public void Push(ulong userId, ReadOnlySpan<byte> pcm16BitStereo)

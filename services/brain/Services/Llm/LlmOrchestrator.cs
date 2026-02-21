@@ -138,8 +138,8 @@ public class LlmOrchestrator(
 
                 responseObserver.OnTextDelta(sessionId, chunk.TextDelta);
             }
-
-            await responseObserver.OnResponseCompletedAsync(sessionId, ct);
+            
+            var fireImmediately = await responseObserver.OnResponseCompletedAsync(sessionId, ct);
             
             if (!string.IsNullOrWhiteSpace(accumulated))
             {
@@ -168,9 +168,15 @@ public class LlmOrchestrator(
                 logger.LogInformation("[LLM] Session {SessionId} - ramble response too short ({Chars} chars < {Min}), bot chose silence",
                     sessionId, accumulated.Length, settings.RambleMinResponseLength);
             }
-
+            
             await SessionService.FireConversationTriggerAsync(
                 sessionId, VoiceSessionMachineTrigger.LlmResponseCompleted);
+
+            if (fireImmediately)
+            {
+                await SessionService.FireConversationTriggerAsync(
+                    sessionId, VoiceSessionMachineTrigger.TtsPlaybackCompleted);
+            }
         }
         catch (OperationCanceledException)
         {

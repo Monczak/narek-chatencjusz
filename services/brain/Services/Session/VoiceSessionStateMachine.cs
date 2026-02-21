@@ -73,9 +73,10 @@ public class VoiceSessionStateMachine
 
         _stateMachine.Configure(VoiceSessionMachineState.Speaking)
             .SubstateOf(VoiceSessionMachineState.Active)
-            .Permit(VoiceSessionMachineTrigger.LlmResponseCompleted, VoiceSessionMachineState.Idle)
+            .Permit(VoiceSessionMachineTrigger.TtsPlaybackCompleted, VoiceSessionMachineState.Idle)
             .Permit(VoiceSessionMachineTrigger.LlmCanceled, VoiceSessionMachineState.Idle)
             .Permit(VoiceSessionMachineTrigger.UserInterrupted, VoiceSessionMachineState.Listening)
+            .Ignore(VoiceSessionMachineTrigger.LlmResponseCompleted)
             .Ignore(VoiceSessionMachineTrigger.UserSpeechStarted);
         
         _stateMachine.OnTransitioned(t =>

@@ -85,6 +85,11 @@ public sealed class SessionAudioGraph : IAsyncDisposable
         _graphCt = linked.Token;
 
         _tasks.Add(RunOnDedicatedThread(() => _mixer.StartAsync(_graphCt), $"mixer-{_sessionId}"));
+        
+        _tasks.Add(Task.Factory.StartNew(
+                () => Tts.StartAsync(_graphCt),
+                _graphCt, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap()
+        );
 
         _tasks.Add(Task.Factory.StartNew(
                 () => OutputLoopAsync(_graphCt),

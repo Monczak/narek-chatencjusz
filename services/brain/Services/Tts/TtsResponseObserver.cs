@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using BrainService.Domain.Session;
 using BrainService.Services.Audio.Graph;
+using BrainService.Services.Audio.Nodes;
 using BrainService.Services.Llm;
 using BrainService.Services.Guild;
+using BrainService.Services.Session;
 
 namespace BrainService.Services.Tts;
 
@@ -21,6 +24,11 @@ public class TtsResponseObserver(
     }
 
     private readonly ConcurrentDictionary<string, ResponseState> _active = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _drainCts = new();
+
+    private VoiceSessionService? _sessionService;
+
+    public void SetSessionService(VoiceSessionService svc) => _sessionService = svc;
 
     public async Task OnResponseStarted(string sessionId, ulong guildId, CancellationToken ct)
     {
@@ -74,10 +82,10 @@ public class TtsResponseObserver(
         foreach (var sentence in state.Detector.Feed(delta))
             state.Worker.EnqueueSentence(sentence);
     }
-
-    public async Task OnResponseCompletedAsync(string sessionId, CancellationToken ct)
+    
+    public async Task<bool> OnResponseCompletedAsync(string sessionId, CancellationToken ct)
     {
-        if (!_active.TryRemove(sessionId, out var state)) return;
+        if (!_active.TryRemove(sessionId, out var state)) return true;
 
         try
         {
@@ -89,11 +97,31 @@ public class TtsResponseObserver(
 
             await state.WorkerTask.WaitAsync(ct);
         }
-        catch (OperationCanceledException) { /* caller cancelled */ }
+        catch (OperationCanceledException)
+        {
+            state.Cts.Dispose();
+            throw;
+        }
         finally
         {
             state.Cts.Dispose();
         }
+
+        var ttsNode = audioGraphFactory.TryGetTts(sessionId);
+        if (ttsNode == null || _sessionService == null || ttsNode.QueueDepth == 0)
+        {
+            // No audio was enqueued or no service wired up - complete immediately
+            return true;
+        }
+
+        var drainCts = new CancellationTokenSource();
+        if (_drainCts.TryRemove(sessionId, out var stale))
+            stale.Cancel();
+        _drainCts[sessionId] = drainCts;
+
+        _ = Task.Run(() => DrainMonitorAsync(sessionId, ttsNode, drainCts.Token), CancellationToken.None);
+
+        return false;
     }
 
     public string? OnResponseCanceled(string sessionId)
@@ -103,6 +131,46 @@ public class TtsResponseObserver(
         var committedText = state.Worker.EnqueuedText;
         CleanupState(state);
         return string.IsNullOrEmpty(committedText) ? null : committedText;
+    }
+    
+    public void CancelDrain(string sessionId)
+    {
+        if (_drainCts.TryRemove(sessionId, out var cts))
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+    }
+
+    private async Task DrainMonitorAsync(string sessionId, TtsNode ttsNode, CancellationToken drainCt)
+    {
+        const int pollMs = 20;
+
+        try
+        {
+            while (ttsNode.QueueDepth > 0)
+                await Task.Delay(pollMs, drainCt);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogDebug("[TTS] Session {SessionId} - drain monitor cancelled", sessionId);
+            return;
+        }
+        finally
+        {
+            _drainCts.TryRemove(sessionId, out _);
+        }
+
+        logger.LogDebug("[TTS] Session {SessionId} - playback finished, completing Speaking state", sessionId);
+
+        try
+        {
+            await _sessionService!.FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.TtsPlaybackCompleted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[TTS] Session {SessionId} - error firing TtsPlaybackCompleted", sessionId);
+        }
     }
 
     private static void CleanupState(ResponseState state)

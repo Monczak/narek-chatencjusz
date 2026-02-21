@@ -9,6 +9,7 @@ using BrainService.Proto.Brain;
 using BrainService.Services.Audio.Graph;
 using BrainService.Services.Llm;
 using BrainService.Services.Guild;
+using BrainService.Services.Tts;
 using Microsoft.AspNetCore.SignalR;
 using RedLockNet;
 using StackExchange.Redis;
@@ -32,8 +33,10 @@ public class VoiceSessionService(
     private readonly ConcurrentDictionary<string, VoiceSessionRuntimeState> _runtimeStates = new();
     
     private ILlmOrchestrationTrigger? _orchestrator;
+    private TtsResponseObserver? _ttsObserver;
     
     public void SetOrchestrator(ILlmOrchestrationTrigger trigger) => _orchestrator = trigger;
+    public void SetTtsObserver(TtsResponseObserver observer) => _ttsObserver = observer;
     
     private async Task<string?> ResolveSessionIdAsync(ulong guildId, string? providedSessionId)
     {
@@ -294,11 +297,11 @@ public class VoiceSessionService(
         if (!_runtimeStates.TryGetValue(sessionId, out var runtime)) return;
 
         var ttsNode = audioGraphFactory.TryGetTts(sessionId);
+        var remainingMs = (ttsNode?.QueueDepth ?? 0) * 20; // each frame = 20ms
 
-        if (ttsNode is { QueueDepth: > 0 })
+        if (remainingMs > 0)
         {
             var settings = await settingsService.GetSettingsAsync(runtime.GuildId);
-            var remainingMs = ttsNode.QueueDepth * 20; // each frame = 20 ms
             var thresholdMs = settings.InterruptThresholdMs;
 
             if (remainingMs < thresholdMs)
@@ -310,11 +313,12 @@ public class VoiceSessionService(
                 return;
             }
 
-            // Flush TTS queue - soundboard is NOT touched (not interruptible)
             logger.LogInformation(
-                "[Interrupt] Session {SessionId} - flushing TTS ({Ms}ms remaining)", sessionId, remainingMs);
-            ttsNode.Flush();
+                "[Interrupt] Session {SessionId} - interrupting TTS ({Ms}ms remaining)", sessionId, remainingMs);
         }
+        
+        _ttsObserver?.CancelDrain(sessionId);
+        ttsNode?.Flush();
 
         _orchestrator?.Cancel(sessionId);
         await FireConversationTriggerAsync(sessionId, VoiceSessionMachineTrigger.UserInterrupted);

@@ -7,6 +7,6 @@ public class NullLlmResponseObserver : ILlmResponseObserver
     public Task OnResponseStarted(string sessionId, ulong guildId, CancellationToken ct) => Task.CompletedTask;
     public void OnTextDelta(string sessionId, string delta) { }
 
-    public Task OnResponseCompletedAsync(string sessionId, CancellationToken ct) => Task.CompletedTask;
+    public Task<bool> OnResponseCompletedAsync(string sessionId, CancellationToken ct) => Task.FromResult(true);
     public string? OnResponseCanceled(string sessionId) => null;
 }

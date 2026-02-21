@@ -18,4 +18,5 @@ public enum VoiceSessionMachineTrigger
     LlmResponseCompleted,
     LlmCanceled,
     UserInterrupted,
+    TtsPlaybackCompleted,
 }

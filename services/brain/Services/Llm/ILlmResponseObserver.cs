@@ -6,7 +6,7 @@ public interface ILlmResponseObserver
 
     void OnTextDelta(string sessionId, string delta);
     
-    Task OnResponseCompletedAsync(string sessionId, CancellationToken ct);
+    Task<bool> OnResponseCompletedAsync(string sessionId, CancellationToken ct);
 
     string? OnResponseCanceled(string sessionId);
 }

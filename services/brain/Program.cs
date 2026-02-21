@@ -126,9 +126,13 @@ await vadModelService.EnsureModelAsync();
 
 {
     var orchestrator = app.Services.GetRequiredService<LlmOrchestrator>();
-    var sessionSvc = app.Services.GetRequiredService<VoiceSessionService>();
+    var sessionSvc   = app.Services.GetRequiredService<VoiceSessionService>();
     orchestrator.SetSessionService(sessionSvc);
     sessionSvc.SetOrchestrator(orchestrator);
+    
+    var ttsObserver = app.Services.GetRequiredService<TtsResponseObserver>();
+    ttsObserver.SetSessionService(sessionSvc);
+    sessionSvc.SetTtsObserver(ttsObserver);
 }
 
 {
