@@ -154,7 +154,7 @@ requires-dist = [
     { name = "dependency-injector", specifier = ">=4.48.3" },
     { name = "grpcio", specifier = ">=1.76.0" },
     { name = "grpcio-tools", specifier = ">=1.76.0" },
-    { name = "py-cord", git = "https://github.com/Pycord-Development/pycord?rev=refs%2Fpull%2F3159%2Fhead" },
+    { name = "py-cord", extras = ["voice"], git = "https://github.com/Pycord-Development/pycord?rev=refs%2Fpull%2F3159%2Fhead" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "pynacl", specifier = ">=1.6.2" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
@@ -611,6 +611,12 @@ source = { git = "https://github.com/Pycord-Development/pycord?rev=refs%2Fpull%2
 dependencies = [
     { name = "aiohttp" },
     { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+voice = [
+    { name = "davey" },
+    { name = "pynacl" },
 ]
 
 [[package]]

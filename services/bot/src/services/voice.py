@@ -257,6 +257,9 @@ class VoiceService:
             if not is_silent:
                 vc._silence_tail = SILENCE_TAIL_FRAMES # type: ignore
 
+            if not isinstance(getattr(vc, 'encoder', None), discord.opus.Encoder):
+                vc.encoder = discord.opus.Encoder()
+
             vc.send_audio_packet(pcm_data, encode=True)
             
             self.keepalive.mark_audio_sent(guild_id)

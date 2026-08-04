@@ -54,6 +54,8 @@ class VoiceKeepaliveService:
                     # If we haven't sent audio in KEEPALIVE_INTERVAL seconds, send silence
                     if now - last_sent > KEEPALIVE_INTERVAL:
                         try:
+                            if not isinstance(getattr(vc, 'encoder', None), discord.opus.Encoder):
+                                vc.encoder = discord.opus.Encoder()
                             vc.send_audio_packet(SILENCE_FRAME, encode=True)
                             self._last_sent[guild_id] = now
                             logging.debug(f"Sent keepalive silence to guild {guild_id}")

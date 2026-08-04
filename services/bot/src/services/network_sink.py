@@ -60,11 +60,16 @@ class BufferedStreamAudioSink(Sink):
         )
         self._jitter_thread.start()
 
-    def write(self, data: bytes, user: int):
-        frame = data[-CHUNK_SIZE:]
+    def write(self, data, user):
+        pcm_data = getattr(data, "pcm", data)
+        user_id = getattr(user, "id", user)
+        if user_id is None:
+            return
+
+        frame = pcm_data[-CHUNK_SIZE:]
         with self.buffer_lock:
-            if user not in self.user_buffers:
-                self.user_buffers[user] = {
+            if user_id not in self.user_buffers:
+                self.user_buffers[user_id] = {
                     "data": bytearray(), 
                     "playing": False,
                     "last_frame": SILENCE_FRAME,
@@ -73,7 +78,7 @@ class BufferedStreamAudioSink(Sink):
                     "needs_smoothing": False
                 }
             
-            self.user_buffers[user]["data"].extend(frame)
+            self.user_buffers[user_id]["data"].extend(frame)
 
     def _high_precision_jitter_loop(self):
         FRAME_DURATION = 0.02
