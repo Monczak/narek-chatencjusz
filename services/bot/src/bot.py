@@ -106,7 +106,7 @@ class NarekChatencjuszBot(discord.Bot):
                         self.valkey.delete(f"guild:{guild_id}:connection")
                         self.valkey.delete(f"guild:{guild_id}:channel")
 
-                        if vc.recording:
+                        if vc.is_recording():
                             vc.stop_recording()
                         
                         if vc.is_connected():

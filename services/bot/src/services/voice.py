@@ -108,7 +108,7 @@ class VoiceService:
             # Always force a disconnect before reconnecting if we're already connected to a voice channel 
             if guild.voice_client:
                 try:
-                    if guild.voice_client.recording:
+                    if guild.voice_client.is_recording():
                         guild.voice_client.stop_recording()
                     await guild.voice_client.disconnect(force=True)
                 except Exception as e:
@@ -123,7 +123,7 @@ class VoiceService:
                 await self.audio_stream.start_session(session_id, guild_ctx.id)
 
             if guild.voice_client:
-                if not guild.voice_client.recording:
+                if not guild.voice_client.is_recording():
                     guild.voice_client.start_recording(
                         BufferedStreamAudioSink(guild, self.audio_stream, self.state),
                         self._recording_finished_callback
@@ -166,7 +166,7 @@ class VoiceService:
         if guild.voice_client:
             try:
                 # Suppress "Not recording" errors
-                if guild.voice_client.recording: # type: ignore
+                if guild.voice_client.is_recording(): # type: ignore
                     guild.voice_client.stop_recording() # type: ignore
             except Exception:
                 pass
@@ -205,7 +205,7 @@ class VoiceService:
                 await self.audio_stream.stop_session(session_id)
             
             if guild.voice_client:
-                if guild.voice_client.recording:
+                if guild.voice_client.is_recording():
                     guild.voice_client.stop_recording()
                 await guild.voice_client.disconnect(force=True)
 
