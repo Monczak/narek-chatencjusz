@@ -282,13 +282,31 @@ public class VoiceSessionService(
 
             // Speaking during Speaking → check interruption threshold
             if (resultingState == VoiceSessionMachineState.Speaking)
-                await HandleInterruptionAsync(sessionId);
+            {
+                var settings = await settingsService.GetSettingsAsync(guildId);
+                runtime.InterruptTimer.Start(settings.InterruptThresholdMs, async () =>
+                {
+                    try
+                    {
+                        await HandleInterruptionAsync(sessionId);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Error in HandleInterruptionAsync timer callback for session {SessionId}", sessionId);
+                    }
+                });
+            }
         }
-        else if (speakingNowEmpty && resultingState == VoiceSessionMachineState.Listening)
+        else if (speakingNowEmpty)
         {
-            // Last speaker stopped → start silence timer
-            var settings = await settingsService.GetSettingsAsync(guildId);
-            StartSilenceTimer(sessionId, guildId, settings.SilenceThresholdMs, runtime);
+            runtime.InterruptTimer.Cancel();
+
+            if (resultingState == VoiceSessionMachineState.Listening)
+            {
+                // Last speaker stopped → start silence timer
+                var settings = await settingsService.GetSettingsAsync(guildId);
+                StartSilenceTimer(sessionId, guildId, settings.SilenceThresholdMs, runtime);
+            }
         }
     }
     
@@ -297,25 +315,8 @@ public class VoiceSessionService(
         if (!_runtimeStates.TryGetValue(sessionId, out var runtime)) return;
 
         var ttsNode = audioGraphFactory.TryGetTts(sessionId);
-        var remainingMs = (ttsNode?.QueueDepth ?? 0) * 20; // each frame = 20ms
 
-        if (remainingMs > 0)
-        {
-            var settings = await settingsService.GetSettingsAsync(runtime.GuildId);
-            var thresholdMs = settings.InterruptThresholdMs;
-
-            if (remainingMs < thresholdMs)
-            {
-                // Close to the end - not worth cutting off; let TTS finish naturally
-                logger.LogDebug(
-                    "[Interrupt] Session {SessionId} - {Ms}ms remaining < threshold {ThresholdMs}ms, ignoring interrupt",
-                    sessionId, remainingMs, thresholdMs);
-                return;
-            }
-
-            logger.LogInformation(
-                "[Interrupt] Session {SessionId} - interrupting TTS ({Ms}ms remaining)", sessionId, remainingMs);
-        }
+        logger.LogInformation("[Interrupt] Session {SessionId} - user speech exceeded interrupt threshold, interrupting TTS", sessionId);
         
         _ttsObserver?.CancelDrain(sessionId);
         ttsNode?.Flush();
@@ -501,5 +502,6 @@ public class VoiceSessionService(
         runtime.SilenceTimer.Cancel();
         runtime.GraceTimer.Cancel();
         runtime.RambleTimer.Cancel();
+        runtime.InterruptTimer.Cancel();
     }
 }
